@@ -111,21 +111,21 @@ struct ls1c_cop_regs
 #define __REG32(addr)		*((volatile unsigned int *)(addr))
 
 #define GMAC0_BASE			0xBFE10000
-#define GMAC0_DMA_BASE		0xBFE11000
+#define GMAC0_DMA_BASE	0xBFE11000
 #define GMAC1_BASE			0xBFE20000
-#define GMAC1_DMA_BASE		0xBFE21000
+#define GMAC1_DMA_BASE	0xBFE21000
 #define I2C0_BASE			0xBFE58000
-#define PWM0_BASE			0xBFE5C000
-#define PWM1_BASE			0xBFE5C010
-#define PWM2_BASE			0xBFE5C020
-#define PWM3_BASE			0xBFE5C030
+//#define PWM0_BASE			0xBFE5C000
+//#define PWM1_BASE			0xBFE5C010
+//#define PWM2_BASE			0xBFE5C020
+//#define PWM3_BASE			0xBFE5C030
 #define WDT_BASE			0xBFE5C060
 #define RTC_BASE			0xBFE64000
 #define I2C1_BASE			0xBFE68000
 #define I2C2_BASE			0xBFE70000
 #define AC97_BASE			0xBFE74000
 #define NAND_BASE			0xBFE78000
-#define SPI_BASE			0xBFE80000
+#define SPI_BASE			       0xBFE80000
 #define CAN1_BASE			0xBF004300
 #define CAN0_BASE			0xBF004400
 
@@ -136,6 +136,36 @@ struct ls1c_cop_regs
 
 #define PLL_FREQ 				__REG32(0xbfe78030)
 #define PLL_DIV_PARAM 			__REG32(0xbfe78034)
+
+
+/* GPIO mutiplex*/
+#define GPIO_BASE0                  0xBFD010C0  //31~0
+#define GPIO_BASE1                  0xBFD010C4  //63~32
+#define GPIO_BASE2                  0xBFD010C8  //95~64
+#define GPIO_BASE3                  0xBFD010CC  //127~96
+
+#define GPIO_CFG(base)            __REG32(base)
+#define GPIO_EN(base)              __REG32(base + 0x10)
+#define GPIO_IN(base)               __REG32(base + 0x20)
+#define GPIO_OUT(base)            __REG32(base + 0x30)
+
+/*pads mutiplex*/
+#define PAD_MUTI_BASE0           0XBFD011C0 //31~0
+#define PAD_MUTI_BASE1           0XBFD011C4 //63~32
+#define PAD_MUTI_BASE2           0XBFD011C8 //95~64
+#define PAD_MUTI_BASE3           0XBFD011CC //127~96
+
+#define CBUS_FIRST(base)            __REG32(base)
+#define CBUS_SECOND(base)         __REG32(base+0x10)
+#define CBUS_THIRD(base)           __REG32(base+0x20)
+#define CBUS_FOURTH(base)         __REG32(base+0x30)
+#define CBUS_FIFTH(base)             __REG32(base+0x40)
+
+
+
+
+
+
 
 #endif
 
