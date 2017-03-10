@@ -15,11 +15,13 @@ void rt_pad_multiplex_init(void)
 {
 
 	/***************0~31*******************/
-	/*GPIO 0~5*/
+	/*GPIO 0~1*/
 	GPIO_CFG(GPIO_BASE0) |= (1<<0);
 	GPIO_CFG(GPIO_BASE0) |= (1<<1);
-	GPIO_CFG(GPIO_BASE0) |= (1<<2);
-	GPIO_CFG(GPIO_BASE0) |= (1<<3);
+	/*GPIO 2~3 uart1*/
+	CBUS_FOURTH(GPIO_BASE0) |=(1<<2);
+	CBUS_FOURTH(GPIO_BASE0) |=(1<<3);
+	/*GPIO 4~5*/
 	GPIO_CFG(GPIO_BASE0) |= (1<<4);
 	GPIO_CFG(GPIO_BASE0) |= (1<<5);
 
@@ -38,11 +40,11 @@ void rt_pad_multiplex_init(void)
 	GPIO_CFG(GPIO_BASE1) |= (1<<20);
 	GPIO_CFG(GPIO_BASE1) |= (1<<21);
 	/*GPIO 54~55 I2C1*/
-	CBUS_FOURTH(PAD_MUTI_BASE1) |= (1<<22);//54-32=22
-	CBUS_FOURTH(PAD_MUTI_BASE1) |= (1<<23);
+	//CBUS_FOURTH(PAD_MUTI_BASE1) |= (1<<22);//54-32=22
+	//CBUS_FOURTH(PAD_MUTI_BASE1) |= (1<<23);
 	/*GPIO 56~57 UART7*/
-	CBUS_FIFTH(PAD_MUTI_BASE1) |= (1<<24);//56-32=24
-	CBUS_FIFTH(PAD_MUTI_BASE1) |= (1<<25);
+	//CBUS_FIFTH(PAD_MUTI_BASE1) |= (1<<24);//56-32=24
+	//CBUS_FIFTH(PAD_MUTI_BASE1) |= (1<<25);
 
 
 	/**************64~95*****************/

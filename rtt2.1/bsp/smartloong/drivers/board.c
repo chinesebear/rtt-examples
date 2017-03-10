@@ -19,6 +19,7 @@
 
 #include "board.h"
 #include "uart.h"
+#include "padconfig.h"
 #include "ls1c.h"
 
 /**
@@ -56,6 +57,8 @@ void rt_hw_timer_init(void)
  */
 void rt_hw_board_init(void)
 {
+	rt_pad_multiplex_init();
+	
 #ifdef RT_USING_UART
 	/* init hardware UART device */
 	rt_hw_uart_init();
