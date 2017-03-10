@@ -1,0 +1,6 @@
+条件：
+	uart2作为console的接口，uart1作为通信接口。
+内容：
+	通过上位机对uart1进行写操作，smart loong将在uart1口接收的数据后再通过uart1全部发送回去。
+目的：
+	测试uart1的收发功能。

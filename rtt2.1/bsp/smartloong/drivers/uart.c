@@ -36,13 +36,14 @@ struct rt_uart_ls1c
 	/* buffer for reception */
 	rt_uint8_t read_index, save_index;
 	rt_uint8_t rx_buffer[RT_UART_RX_BUFFER_SIZE];
-}uart_device;
+}uart1_device,uart2_device;
 
-static void rt_uart_irqhandler(int irqno, void *param)
+rt_device_t uart_dev[10];
+
+static void uart_rx_process(struct rt_uart_ls1c *uart)
 {
 	rt_ubase_t level;
 	rt_uint8_t isr;
-	struct rt_uart_ls1c *uart = &uart_device;
 
 	/* read interrupt status and clear it */
 	isr = UART_IIR(uart->hw_base);
@@ -76,6 +77,33 @@ static void rt_uart_irqhandler(int irqno, void *param)
 		}
 	}
 
+	return;
+}
+static rt_int32_t uart_get_dev_numnber(const char * name)
+{
+	int num[2];
+	int uartnum;
+	if(rt_memcmp(name,"uart",4))return 0xFF;
+	num[0] = *(name+4) - '0';
+	
+	if(*(name+5) == '\0')
+	{
+		uartnum = num[0];
+		return uartnum;
+	}
+	num[1] = *(name+5)- '0';
+	uartnum = num[0]*10 + num[1];
+	if(uartnum >UART_NUM_MAX) return 0xFF;
+	return uartnum;
+}
+static void rt_uart1_irqhandler(int irqno, void *param)
+{
+	uart_rx_process(&uart1_device);
+	return;
+}
+static void rt_uart2_irqhandler(int irqno, void *param)
+{
+	uart_rx_process(&uart2_device);
 	return;
 }
 
@@ -125,7 +153,11 @@ static rt_err_t rt_uart_open(rt_device_t dev, rt_uint16_t oflag)
 		UART_IER(uart->hw_base) |= UARTIER_IRXE;
 
 		/* install interrupt */
-		rt_hw_interrupt_install(uart->irq, rt_uart_irqhandler, RT_NULL, "UART");
+		if(uart->irq == LS1C_UART1_IRQ)
+			rt_hw_interrupt_install(uart->irq, rt_uart1_irqhandler, RT_NULL, "UART1");
+		else if(uart->irq == LS1C_UART2_IRQ)
+			rt_hw_interrupt_install(uart->irq, rt_uart2_irqhandler, RT_NULL, "UART2");
+		
 		rt_hw_interrupt_umask(uart->irq);
 	}
 	return RT_EOK;
@@ -247,23 +279,38 @@ void rt_hw_uart_init(void)
 	struct rt_uart_ls1c *uart;
 
 	/* get uart device */
-	uart = &uart_device;
+	uart = &uart1_device;
 
 	/* device initialization */
 	uart->parent.type = RT_Device_Class_Char;
 	rt_memset(uart->rx_buffer, 0, sizeof(uart->rx_buffer));
 	uart->read_index = uart->save_index = 0;
+	uart->hw_base = UART1_BASE;
+	uart->irq = LS1C_UART1_IRQ;
 
-#if defined(RT_USING_UART0)
-	uart->hw_base = UART0_BASE;
-	uart->irq = LS1C_UART0_IRQ;
-#elif defined(RT_USING_UART2)
+	/* device interface */
+	uart->parent.init       = rt_uart_init;
+	uart->parent.open       = rt_uart_open;
+	uart->parent.close      = rt_uart_close;
+	uart->parent.read       = rt_uart_read;
+	uart->parent.write      = rt_uart_write;
+	uart->parent.control    = RT_NULL;
+	uart->parent.user_data  = RT_NULL;
+
+	rt_device_register(&uart->parent, "uart1",
+						RT_DEVICE_FLAG_RDWR |
+						RT_DEVICE_FLAG_STREAM |
+						RT_DEVICE_FLAG_INT_RX);
+
+	/* get uart device */
+	uart = &uart2_device;
+
+	/* device initialization */
+	uart->parent.type = RT_Device_Class_Char;
+	rt_memset(uart->rx_buffer, 0, sizeof(uart->rx_buffer));
+	uart->read_index = uart->save_index = 0;
 	uart->hw_base = UART2_BASE;
 	uart->irq = LS1C_UART2_IRQ;
-#elif defined(RT_USING_UART3)
-	uart->hw_base = UART3_BASE;
-	uart->irq = LS1C_UART3_IRQ;
-#endif
 
 	/* device interface */
 	uart->parent.init       = rt_uart_init;
@@ -279,6 +326,26 @@ void rt_hw_uart_init(void)
 						RT_DEVICE_FLAG_STREAM |
 						RT_DEVICE_FLAG_INT_RX);
 }
+
+void rt_hw_uart_set_device(const char* name)
+{
+	rt_device_t newdev;
+	rt_int32_t devnum;
+	devnum = uart_get_dev_numnber(name);
+	if(devnum > UART_NUM_MAX) return ;
+    /* find new console device */
+    newdev = rt_device_find(name);
+    if (newdev != RT_NULL)
+    {
+	     /* set new device */
+        rt_device_open(newdev, RT_DEVICE_OFLAG_RDWR | RT_DEVICE_FLAG_STREAM);
+        uart_dev[devnum] = newdev;
+    }
+
+    return;
+}
+
+
 #endif /* end of UART */
 
 

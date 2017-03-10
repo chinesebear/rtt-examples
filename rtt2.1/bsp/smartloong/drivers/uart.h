@@ -34,7 +34,7 @@
 #define UART9_BASE			0xBFE4C900
 #define UART10_BASE			0xBFE4Ca00
 #define UART11_BASE			0xBFE4Cb00
-
+#define UART_NUM_MAX			11
 /* UART registers */
 #define UART_DAT(base)		__REG8(base + 0x00)
 #define UART_IER(base)		__REG8(base + 0x01)
@@ -99,5 +99,6 @@
 #define UARTLSR_DR		(1 << 0)
 
 void rt_hw_uart_init(void);
+void rt_hw_uart_set_device(const char* name);
 
 #endif

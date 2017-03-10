@@ -65,7 +65,7 @@ void rt_hw_board_init(void)
 	/* set console device */
 	rt_console_set_device("uart2");
 #endif
-
+	rt_hw_uart_set_device("uart1");
 	/* init operating system timer */
 	rt_hw_timer_init();
 

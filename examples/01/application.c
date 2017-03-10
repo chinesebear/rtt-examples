@@ -16,7 +16,7 @@
 
 #include <rtthread.h>
 #include <components.h>
-
+extern rt_device_t uart_dev[];
 void rt_init_thread_entry(void *parameter)
 {
 	/* initialization RT-Thread Components */
@@ -25,11 +25,21 @@ void rt_init_thread_entry(void *parameter)
 
 void rt_run_example_thread_entry(void *parameter)
 {
+	rt_uint8_t rx_buffer[256];
+	rt_uint8_t tx_buffer[256];
+	rt_uint32_t rx_size,tx_size;
+	rt_kprintf("example thread start...\r\n");
 	for(;;)
 	{
-		rt_kprintf("example1...\r\n");
-		rt_thread_delay(1000);
+		rt_memset(rx_buffer,0,256);
+		rt_memset(tx_buffer,0,256);
+		rx_size = rt_device_read(uart_dev[1],0,rx_buffer,256);
+		tx_size = rx_size;
+		rt_memcpy(tx_buffer,rx_buffer,rx_size);
+		rt_device_read(uart_dev[1],0,rx_buffer,tx_size);
+		rt_thread_delay(1);
 	}
+	rt_kprintf("never get here...\r\n");
 }
 
 
