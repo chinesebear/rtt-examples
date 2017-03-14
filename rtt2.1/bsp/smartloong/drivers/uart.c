@@ -38,7 +38,7 @@ struct rt_uart_ls1c
 	rt_uint8_t rx_buffer[RT_UART_RX_BUFFER_SIZE];
 }uart1_device,uart2_device;
 
-rt_device_t uart_dev[10];
+rt_device_t uart_dev[12];
 
 static void uart_rx_process(struct rt_uart_ls1c *uart)
 {

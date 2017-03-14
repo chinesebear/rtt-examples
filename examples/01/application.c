@@ -36,8 +36,8 @@ void rt_run_example_thread_entry(void *parameter)
 		rx_size = rt_device_read(uart_dev[1],0,rx_buffer,256);
 		tx_size = rx_size;
 		rt_memcpy(tx_buffer,rx_buffer,rx_size);
-		rt_device_read(uart_dev[1],0,rx_buffer,tx_size);
-		rt_thread_delay(1);
+		rt_device_write(uart_dev[1],0,rx_buffer,tx_size);
+		//rt_thread_delay(1);
 	}
 	rt_kprintf("never get here...\r\n");
 }
