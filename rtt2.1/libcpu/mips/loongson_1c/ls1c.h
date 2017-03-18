@@ -18,9 +18,27 @@
 
 #include "../common/mipsregs.h"
 
+/*
+*There are 5 groups of interrupt registers in loonson 1C300
+* and 6 registers every group (state, enable, setting,clear, electronic level(pole), edge) 
+*/
+#define LS1C_INT0_BASE    0xBFD01040
+#define LS1C_INT1_BASE    0xBFD01058
+#define LS1C_INT2_BASE    0xBFD01070
+#define LS1C_INT3_BASE    0xBFD01088
+#define LS1C_INT4_BASE    0xBFD010A0
+
+#define LS1C_INT_SR(base)     __REG32(base) //specail register 0
+#define LS1C_INT_EN(base)     __REG32(base+0x4)
+#define LS1C_INT_SET(base)   __REG32(base+0x8)
+#define LS1C_INT_CLR(base)   __REG32(base+0xC)
+#define LS1C_INT_POL(base)     __REG32(base+0x10)
+#define LS1C_INT_EDGE(base)   __REG32(base+0x14)
+
 #define LS1C_ACPI_IRQ	0
 #define LS1C_HPET_IRQ	1
 #define LS1C_UART0_IRQ	2
+//Null 3
 #define LS1C_UART1_IRQ	4
 #define LS1C_UART2_IRQ	5
 #define LS1C_CAN0_IRQ	6
@@ -28,30 +46,46 @@
 #define LS1C_SPI0_IRQ	8
 #define LS1C_SPI1_IRQ	9
 #define LS1C_AC97_IRQ	10
-#define LS1C_MS_IRQ		11
-#define LS1C_KB_IRQ		12
+//Reserved 11~12
 #define LS1C_DMA0_IRQ	13
 #define LS1C_DMA1_IRQ	14
-#define LS1C_NAND_IRQ	15
-#define LS1C_I2C0_IRQ	16
-#define LS1C_I2C1_IRQ	17
-#define LS1C_PWM0_IRQ	18
-#define LS1C_PWM1_IRQ	19
-#define LS1C_PWM2_IRQ	20
-#define LS1C_PWM3_IRQ	21
-#define LS1C_LPC_IRQ	22
+#define LS1C_DMA2_IRQ	15
+#define LS1C_NAND_IRQ	16
+#define LS1C_PWM0_IRQ	17
+#define LS1C_PWM1_IRQ	18
+#define LS1C_PWM2_IRQ	19
+#define LS1C_PWM3_IRQ	20
+#define LS1C_RTC0_IRQ	21
+#define LS1C_RTC1_IRQ	22
+#define LS1C_RTC2_IRQ   23
+//Reserved 24~28
+#define LS1C_UART3_IRQ  29
+#define LS1C_ADC_IRQ     30
+#define LS1C_SDIO_IRQ    31
 #define LS1C_EHCI_IRQ	32
 #define LS1C_OHCI_IRQ	33
-#define LS1C_GMAC1_IRQ	34
-#define LS1C_GMAC2_IRQ	35
-#define LS1C_SATA_IRQ	36
-#define LS1C_GPU_IRQ	37
-#define LS1C_PCI_INTA_IRQ 38
-#define LS1C_PCI_INTB_IRQ 39
-#define LS1C_PCI_INTC_IRQ 40
-#define LS1C_PCI_INTD_IRQ 41
+#define LS1C_OTG_IRQ	34
+#define LS1C_MAC_IRQ	35
+#define LS1C_CAM_IRQ	36
+#define LS1C_UART4_IRQ	37
+#define LS1C_UART5_IRQ 38
+#define LS1C_UART6_IRQ 39
+#define LS1C_UART7_IRQ 40
+#define LS1C_UART8_IRQ 41
+//Null 42~44
+#define LS1C_UART9_IRQ 45
+#define LS1C_UART10_IRQ 46
+#define LS1C_UART11_IRQ 47
+//Reserved 48
+#define LS1C_I2C2_IRQ 49
+#define LS1C_I2C1_IRQ 50
+#define LS1C_I2C0_IRQ 51
+//Reserved 52~53
+//GPIO irq: 54~159
+//GPIO95~0,irq= gpio + 64 ,GPIO105~96, irq=gpio-42
+#define LS1C_GPIO_IRQ(gpio) (gpio>=96 && gpio <= 105)?(gpio-42):(gpio+64)
 
-#define LS1C_GPIO_IRQ 64
+
 #define LS1C_GPIO_FIRST_IRQ 64
 #define LS1C_GPIO_IRQ_COUNT 96
 #define LS1C_GPIO_LAST_IRQ  (LS1C_GPIO_FIRST_IRQ + LS1C_GPIO_IRQ_COUNT-1)
@@ -63,7 +97,7 @@
 
 #define LS1C_LAST_IRQ 159
 #define MIPS_CPU_TIMER_IRQ	167
-#define LS1C_INTREG_BASE 0xbfd01040
+//#define LS1C_INTREG_BASE 0xbfd01040
 
 #define LS1C_DMA_IRQ_BASE 168
 #define LS1C_DMA_IRQ_COUNT 16
@@ -115,10 +149,6 @@ struct ls1c_cop_regs
 #define GMAC1_BASE			0xBFE20000
 #define GMAC1_DMA_BASE	0xBFE21000
 #define I2C0_BASE			0xBFE58000
-//#define PWM0_BASE			0xBFE5C000
-//#define PWM1_BASE			0xBFE5C010
-//#define PWM2_BASE			0xBFE5C020
-//#define PWM3_BASE			0xBFE5C030
 #define WDT_BASE			0xBFE5C060
 #define RTC_BASE			0xBFE64000
 #define I2C1_BASE			0xBFE68000

@@ -20,6 +20,7 @@
 #include "board.h"
 #include "uart.h"
 #include "padconfig.h"
+#include "gpio.h"
 #include "ls1c.h"
 
 /**
@@ -68,7 +69,9 @@ void rt_hw_board_init(void)
 	/* set console device */
 	rt_console_set_device("uart2");
 #endif
-	rt_hw_uart_set_device("uart1");
+	rt_hw_uart_com_init();
+	rt_hw_gpio_init();
+
 	/* init operating system timer */
 	rt_hw_timer_init();
 

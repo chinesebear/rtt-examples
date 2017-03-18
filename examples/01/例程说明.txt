@@ -1,5 +1,6 @@
 条件：
-	uart2作为console的接口，uart1作为通信接口。
+	uart2作为console的接口，uart1作为通信接口。所有串口的波特率为115200。
+	uart1的输入输出管脚为P02和P03。
 内容：
 	通过上位机对uart1进行写操作，smart loong将在uart1口接收的数据后再通过uart1全部发送回去。
 目的：

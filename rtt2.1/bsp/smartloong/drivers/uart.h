@@ -20,6 +20,8 @@
 
 #define DEV_CLK 252000000 // 252MHz
 #define UART_BAUDRATE 115200 
+//uart control cmd
+#define UART_SET_BAUD 0
 
 #define UART0_BASE			0xBFE40000
 //#define UART0_1_BASE		0xBFE41000
@@ -48,31 +50,6 @@
 #define UART_LSB(base)		__REG8(base + 0x00)
 #define UART_MSB(base)		__REG8(base + 0x01)
 
-/* UART0 registers */
-#define UART0_DAT			__REG8(UART0_BASE + 0x00)
-#define UART0_IER			__REG8(UART0_BASE + 0x01)
-#define UART0_IIR			__REG8(UART0_BASE + 0x02)
-#define UART0_FCR			__REG8(UART0_BASE + 0x02)
-#define UART0_LCR			__REG8(UART0_BASE + 0x03)
-#define UART0_MCR			__REG8(UART0_BASE + 0x04)
-#define UART0_LSR			__REG8(UART0_BASE + 0x05)
-#define UART0_MSR			__REG8(UART0_BASE + 0x06)
-
-#define UART0_LSB			__REG8(UART0_BASE + 0x00)
-#define UART0_MSB			__REG8(UART0_BASE + 0x01)
-
-/* UART1 registers */
-#define UART1_DAT			__REG8(UART1_BASE + 0x00)
-#define UART1_IER			__REG8(UART1_BASE + 0x01)
-#define UART1_IIR			__REG8(UART1_BASE + 0x02)
-#define UART1_FCR			__REG8(UART1_BASE + 0x02)
-#define UART1_LCR			__REG8(UART1_BASE + 0x03)
-#define UART1_MCR			__REG8(UART1_BASE + 0x04)
-#define UART1_LSR			__REG8(UART1_BASE + 0x05)
-#define UART1_MSR			__REG8(UART1_BASE + 0x06)
-
-#define UART1_LSB			__REG8(UART1_BASE + 0x00)
-#define UART1_MSB			__REG8(UART1_BASE + 0x01)
 
 /* UART interrupt enable register value */
 #define UARTIER_IME		(1 << 3)
@@ -99,6 +76,6 @@
 #define UARTLSR_DR		(1 << 0)
 
 void rt_hw_uart_init(void);
-void rt_hw_uart_set_device(const char* name);
+void rt_hw_uart_com_init(void);
 
 #endif

@@ -15,12 +15,12 @@ void rt_pad_multiplex_init(void)
 {
 
 	/***************0~31*******************/
-	/*GPIO 0~1*/
-	GPIO_CFG(GPIO_BASE0) |= (1<<0);
-	GPIO_CFG(GPIO_BASE0) |= (1<<1);
+	/*GPIO 0~1 uart3*/
+	CBUS_FOURTH(PAD_MUTI_BASE0) |=(1<<0);
+	CBUS_FOURTH(PAD_MUTI_BASE0) |=(1<<1);
 	/*GPIO 2~3 uart1*/
-	CBUS_FOURTH(GPIO_BASE0) |=(1<<2);
-	CBUS_FOURTH(GPIO_BASE0) |=(1<<3);
+	CBUS_FOURTH(PAD_MUTI_BASE0) |=(1<<2);
+	CBUS_FOURTH(PAD_MUTI_BASE0) |=(1<<3);
 	/*GPIO 4~5*/
 	GPIO_CFG(GPIO_BASE0) |= (1<<4);
 	GPIO_CFG(GPIO_BASE0) |= (1<<5);
@@ -35,10 +35,12 @@ void rt_pad_multiplex_init(void)
 	/*GPIO 48~53*/
 	GPIO_CFG(GPIO_BASE1) |= (1<<16);//48-32=15
 	GPIO_CFG(GPIO_BASE1) |= (1<<17);
-	GPIO_CFG(GPIO_BASE1) |= (1<<18);
-	GPIO_CFG(GPIO_BASE1) |= (1<<19);
-	GPIO_CFG(GPIO_BASE1) |= (1<<20);
-	GPIO_CFG(GPIO_BASE1) |= (1<<21);
+	GPIO_CFG(GPIO_BASE1) |= (1<<18);//LED1
+	GPIO_CFG(GPIO_BASE1) |= (1<<19);//LED2
+	GPIO_CFG(GPIO_BASE1) |= (1<<20);//LED3
+	GPIO_CFG(GPIO_BASE1) |= (1<<21);//LED4
+	GPIO_CFG(GPIO_BASE1) |= (1<<22);//LED5
+
 	/*GPIO 54~55 I2C1*/
 	//CBUS_FOURTH(PAD_MUTI_BASE1) |= (1<<22);//54-32=22
 	//CBUS_FOURTH(PAD_MUTI_BASE1) |= (1<<23);
@@ -48,6 +50,9 @@ void rt_pad_multiplex_init(void)
 
 
 	/**************64~95*****************/
+	/*GPIO 85~86*/
+	GPIO_CFG(GPIO_BASE2) |= (1<<21);//85-64=23 KEY2
+	GPIO_CFG(GPIO_BASE2) |= (1<<22);//KEY3
 	/*GPIO 87~90*/
 	GPIO_CFG(GPIO_BASE2) |= (1<<23);//87-64=23
 	GPIO_CFG(GPIO_BASE2) |= (1<<24);
@@ -55,8 +60,8 @@ void rt_pad_multiplex_init(void)
 	GPIO_CFG(GPIO_BASE2) |= (1<<26);
 	/*GPIO 91*/
 	GPIO_CFG(GPIO_BASE2) |= (1<<27);
-	
-	
+	/*GPIO 92*/
+	GPIO_CFG(GPIO_BASE2) |= (1<<28);//KEY1
 }
 
 void rt_pad_show(void)

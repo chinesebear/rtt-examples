@@ -241,7 +241,7 @@ int rt_application_init(void)
 		rt_thread_startup(tid);
 	else
 		return -1;
-#if 1
+#if 0
 	/*create example thread*/
 	tid1 = rt_thread_create("example",
 							rt_run_example_thread_entry, RT_NULL,
@@ -263,7 +263,7 @@ int rt_application_init(void)
 	/* create key_soft_interrupt thread */
 	sid = rt_thread_create("key",
 							key_soft_interrupt_thread_entry, RT_NULL,
-							4096, 12, 20);
+							4096, 10, 20);
 	if (sid != RT_NULL)
 		rt_thread_startup(sid);
 	else

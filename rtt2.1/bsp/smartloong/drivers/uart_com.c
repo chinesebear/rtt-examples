@@ -1,5 +1,5 @@
 /*
- * File      : board.c
+ * File      : uart_com.c
  * This file is part of RT-Thread RTOS
  * COPYRIGHT (C) 2006-2012, RT-Thread Develop Team
  *
@@ -10,13 +10,14 @@
  * Change Logs:
  * Date               Author               Notes
  * 2011-08-08     lgnq                  first version
- * 2015-07-09     chinesebear       modified for loongson 1c
+ * 2015-07-24     chinesebear       uart common driver
  */
 
 #include <rthw.h>
 #include <rtthread.h>
 #include "ls1c.h"
 #include "uart.h"
+#include "finsh.h"
 
 /**
  * @addtogroup Loongson LS1B
@@ -26,7 +27,19 @@
 
 #if defined(RT_USING_UART) && defined(RT_USING_DEVICE)
 
-struct rt_uart_ls1c
+#define MAX_UART_COM 12//12 uarts in loongson 1c
+
+rt_uint32_t uart_base[12]={UART0_BASE, UART1_BASE, UART2_BASE,UART3_BASE,\
+UART4_BASE,UART5_BASE, UART6_BASE, UART7_BASE, UART8_BASE, UART9_BASE,\
+UART10_BASE, UART11_BASE};
+rt_uint32_t uart_irq[12] = {LS1C_UART0_IRQ, LS1C_UART1_IRQ, LS1C_UART2_IRQ, LS1C_UART3_IRQ,\
+	LS1C_UART4_IRQ, LS1C_UART5_IRQ, LS1C_UART6_IRQ, LS1C_UART7_IRQ, LS1C_UART8_IRQ,\
+	LS1C_UART9_IRQ, LS1C_UART10_IRQ, LS1C_UART11_IRQ};
+rt_uint32_t uart_no[12] ={0,1,2,3,4,5,6,7,8,9,10,11};
+char * uart_name[12]={"uart0","uart1","uart2","uart3","uart4","uart5",\
+	"uart6","uart7","uart8","uart9","uart10","uart11"};
+
+struct rt_uart_com_ls1c
 {
 	struct rt_device parent;
 
@@ -36,15 +49,26 @@ struct rt_uart_ls1c
 	/* buffer for reception */
 	rt_uint8_t read_index, save_index;
 	rt_uint8_t rx_buffer[RT_UART_RX_BUFFER_SIZE];
-}uart1_device,uart2_device;
+}uart_com_device[12];
 
-rt_device_t uart_dev[12];
-
-static void uart_rx_process(struct rt_uart_ls1c *uart)
+static void rt_uart_com_irqhandler(int irqno, void *param)
 {
 	rt_ubase_t level;
 	rt_uint8_t isr;
+	struct rt_uart_com_ls1c *uart = RT_NULL;
 	
+	if(irqno == 2)
+		uart  = &uart_com_device[0];
+	else if(irqno== 4|| irqno == 5)
+		uart  = &uart_com_device[irqno-3];
+	else if(irqno== 29)
+		uart  = &uart_com_device[3];
+	else if(irqno >= 37 && irqno <= 41)
+		uart  = &uart_com_device[irqno-33];
+	else if(irqno >=45 && irqno <= 47)
+		uart  = &uart_com_device[irqno-36];
+	else
+		return;
 	/* read interrupt status and clear it */
 	isr = UART_IIR(uart->hw_base);
 	isr = (isr >> 1) & 0x3;
@@ -79,39 +103,11 @@ static void uart_rx_process(struct rt_uart_ls1c *uart)
 
 	return;
 }
-static rt_int32_t uart_get_dev_numnber(const char * name)
-{
-	int num[2];
-	int uartnum;
-	if(rt_memcmp(name,"uart",4))return 0xFF;
-	num[0] = *(name+4) - '0';
-	
-	if(*(name+5) == '\0')
-	{
-		uartnum = num[0];
-		return uartnum;
-	}
-	num[1] = *(name+5)- '0';
-	uartnum = num[0]*10 + num[1];
-	if(uartnum >UART_NUM_MAX) return 0xFF;
-	return uartnum;
-}
-static void rt_uart1_irqhandler(int irqno, void *param)
-{
-	//rt_kprintf("rx int\r\n");
-	uart_rx_process(&uart1_device);
-	return;
-}
-static void rt_uart2_irqhandler(int irqno, void *param)
-{
-	uart_rx_process(&uart2_device);
-	return;
-}
 
-static rt_err_t rt_uart_init(rt_device_t dev)
+static rt_err_t rt_uart_com_init(rt_device_t dev)
 {
 	rt_uint32_t baud_div;
-	struct rt_uart_ls1c *uart = (struct rt_uart_ls1c *)dev;
+	struct rt_uart_com_ls1c *uart = (struct rt_uart_com_ls1c *)dev;
 
 	RT_ASSERT(uart != RT_NULL);
 
@@ -135,7 +131,6 @@ static rt_err_t rt_uart_init(rt_device_t dev)
 	/* Enable UART unit, enable and clear FIFO */
 	//UART_FCR(uart->hw_base) = UARTFCR_UUE | UARTFCR_FE | UARTFCR_TFLS | UARTFCR_RFLS;
 	UART_FCR(uart->hw_base) |= 0x6;//clear fifo
-
 	/* enable RX interrupt  */	
 	UART_IER(uart->hw_base) = UARTIER_IRXE|UARTIER_ILE; 
 	
@@ -144,9 +139,9 @@ static rt_err_t rt_uart_init(rt_device_t dev)
 	return RT_EOK;
 }
 
-static rt_err_t rt_uart_open(rt_device_t dev, rt_uint16_t oflag)
+static rt_err_t rt_uart_com_open(rt_device_t dev, rt_uint16_t oflag)
 {
-	struct rt_uart_ls1c *uart = (struct rt_uart_ls1c *)dev;
+	struct rt_uart_com_ls1c *uart = (struct rt_uart_com_ls1c *)dev;
 
 	RT_ASSERT(uart != RT_NULL);
 	if (dev->flag & RT_DEVICE_FLAG_INT_RX)
@@ -155,19 +150,15 @@ static rt_err_t rt_uart_open(rt_device_t dev, rt_uint16_t oflag)
 		UART_IER(uart->hw_base) |= UARTIER_IRXE;
 
 		/* install interrupt */
-		if(uart->irq == LS1C_UART1_IRQ)
-			rt_hw_interrupt_install(uart->irq, rt_uart1_irqhandler, RT_NULL, "UART1");
-		else if(uart->irq == LS1C_UART2_IRQ)
-			rt_hw_interrupt_install(uart->irq, rt_uart2_irqhandler, RT_NULL, "UART2");
-		
+		rt_hw_interrupt_install(uart->irq, rt_uart_com_irqhandler, RT_NULL, "UART");
 		rt_hw_interrupt_umask(uart->irq);
 	}
 	return RT_EOK;
 }
 
-static rt_err_t rt_uart_close(rt_device_t dev)
+static rt_err_t rt_uart_com_close(rt_device_t dev)
 {
-	struct rt_uart_ls1c *uart = (struct rt_uart_ls1c *)dev;
+	struct rt_uart_com_ls1c *uart = (struct rt_uart_com_ls1c *)dev;
 
 	RT_ASSERT(uart != RT_NULL);
 	if (dev->flag & RT_DEVICE_FLAG_INT_RX)
@@ -179,10 +170,10 @@ static rt_err_t rt_uart_close(rt_device_t dev)
 	return RT_EOK;
 }
 
-static rt_size_t rt_uart_read(rt_device_t dev, rt_off_t pos, void *buffer, rt_size_t size)
+static rt_size_t rt_uart_com_read(rt_device_t dev, rt_off_t pos, void *buffer, rt_size_t size)
 {
 	rt_uint8_t *ptr;
-	struct rt_uart_ls1c *uart = (struct rt_uart_ls1c *)dev;
+	struct rt_uart_com_ls1c *uart = (struct rt_uart_com_ls1c *)dev;
 
 	RT_ASSERT(uart != RT_NULL);
 
@@ -213,10 +204,9 @@ static rt_size_t rt_uart_read(rt_device_t dev, rt_off_t pos, void *buffer, rt_si
 				rt_hw_interrupt_enable(level);
 				break;
 			}
-
 			/* enable interrupt */
 			rt_hw_interrupt_enable(level);
-
+			
 			ptr ++;
 			size --;
 		}
@@ -227,10 +217,10 @@ static rt_size_t rt_uart_read(rt_device_t dev, rt_off_t pos, void *buffer, rt_si
 	return 0;
 }
 
-static rt_size_t rt_uart_write(rt_device_t dev, rt_off_t pos, const void *buffer, rt_size_t size)
+static rt_size_t rt_uart_com_write(rt_device_t dev, rt_off_t pos, const void *buffer, rt_size_t size)
 {
 	char *ptr;
-	struct rt_uart_ls1c *uart = (struct rt_uart_ls1c *)dev;
+	struct rt_uart_com_ls1c *uart = (struct rt_uart_com_ls1c *)dev;
 
 	RT_ASSERT(uart != RT_NULL);
 
@@ -275,81 +265,81 @@ static rt_size_t rt_uart_write(rt_device_t dev, rt_off_t pos, const void *buffer
 
 	return (rt_size_t)ptr - (rt_size_t)buffer;
 }
-
-void rt_hw_uart_init(void)
+rt_err_t  rt_uart_com_control(rt_device_t dev, rt_uint8_t cmd, void *args)
 {
-	struct rt_uart_ls1c *uart;
-	#if 0
-	/* get uart device */
-	uart = &uart1_device;
-
-	/* device initialization */
-	uart->parent.type = RT_Device_Class_Char;
-	rt_memset(uart->rx_buffer, 0, sizeof(uart->rx_buffer));
-	uart->read_index = uart->save_index = 0;
-	uart->hw_base = UART1_BASE;
-	uart->irq = LS1C_UART1_IRQ;
-
-	/* device interface */
-	uart->parent.init       = rt_uart_init;
-	uart->parent.open       = rt_uart_open;
-	uart->parent.close      = rt_uart_close;
-	uart->parent.read       = rt_uart_read;
-	uart->parent.write      = rt_uart_write;
-	uart->parent.control    = RT_NULL;
-	uart->parent.user_data  = RT_NULL;
-
-	rt_device_register(&uart->parent, "uart1",
-						RT_DEVICE_FLAG_RDWR |
-						RT_DEVICE_FLAG_STREAM |
-						RT_DEVICE_FLAG_INT_RX);
-	#endif
-
-	/* get uart device */
-	uart = &uart2_device;
-
-	/* device initialization */
-	uart->parent.type = RT_Device_Class_Char;
-	rt_memset(uart->rx_buffer, 0, sizeof(uart->rx_buffer));
-	uart->read_index = uart->save_index = 0;
-	uart->hw_base = UART2_BASE;
-	uart->irq = LS1C_UART2_IRQ;
-
-	/* device interface */
-	uart->parent.init       = rt_uart_init;
-	uart->parent.open       = rt_uart_open;
-	uart->parent.close      = rt_uart_close;
-	uart->parent.read       = rt_uart_read;
-	uart->parent.write      = rt_uart_write;
-	uart->parent.control    = RT_NULL;
-	uart->parent.user_data  = RT_NULL;
-
-	rt_device_register(&uart->parent, "uart2",
-						RT_DEVICE_FLAG_RDWR |
-						RT_DEVICE_FLAG_STREAM |
-						RT_DEVICE_FLAG_INT_RX);
+	rt_uint32_t* p_arg = (rt_uint32_t*) args;
+	
+	switch(cmd)
+	{
+		case UART_SET_BAUD:
+			break;
+		default:
+			break;
+	}
 }
-
-void rt_hw_uart_set_device(const char* name)
+rt_err_t rt_uart_show(rt_uint32_t num)
 {
-	rt_device_t newdev;
-	rt_int32_t devnum;
-	devnum = uart_get_dev_numnber(name);
-	if(devnum > UART_NUM_MAX) return ;
-    /* find new console device */
-    newdev = rt_device_find(name);
-    if (newdev != RT_NULL)
-    {
-	     /* set new device */
-        rt_device_open(newdev, RT_DEVICE_OFLAG_RDWR | RT_DEVICE_FLAG_STREAM);
-        uart_dev[devnum] = newdev;
-    }
-    return;
+	rt_uint32_t base = uart_base[num];
+	rt_kprintf("%s registers show:\n",uart_name[num]);
+	rt_kprintf("DAT:0x%02X,        FIFO data reg\n",UART_DAT(base));
+	rt_kprintf("IIR:0x%02X,        interrupt indication reg\n",UART_IIR(base));
+	rt_kprintf("LCR:0x%02X,        line control reg\n",UART_LCR(base));
+	rt_kprintf("LSR:0x%02X,        line status reg\n",UART_LSR(base));
+	rt_kprintf("MSR:0x%02X,        modem status reg\n",UART_MSR(base));
+	rt_kprintf("LSB:0x%02X,        freq div reg 7~0\n",UART_LSB(base));
+	rt_kprintf("MSB:0x%02X,        freq div reg 15~8\n",UART_MSB(base));
 }
+void rt_hw_uart_com_init(void)
+{
+	struct rt_uart_com_ls1c *uart;
+	rt_uint32_t i;
+	for(i=0 ; i < MAX_UART_COM; i++)
+	{
+		if(i==0 ||i ==2)  continue;
 
+		if( i >3) break;
 
+		/* get uart device */
+		uart = &uart_com_device[i];
+
+		/* device initialization */
+		uart->parent.type = RT_Device_Class_Char;
+		rt_memset(uart->rx_buffer, 0, sizeof(uart->rx_buffer));
+		uart->read_index = uart->save_index = 0;
+		uart->hw_base = uart_base[i];
+		uart->irq = uart_irq[i];
+
+		/* device interface */
+		uart->parent.init       = rt_uart_com_init;
+		uart->parent.open       = rt_uart_com_open;
+		uart->parent.close      = rt_uart_com_close;
+		uart->parent.read       = rt_uart_com_read;
+		uart->parent.write      = rt_uart_com_write;
+		uart->parent.control    = rt_uart_com_control;
+		uart->parent.user_data  = &uart_no[i];
+
+		rt_device_register(&uart->parent, uart_name[i],
+							RT_DEVICE_FLAG_RDWR |
+							RT_DEVICE_FLAG_STREAM |
+							RT_DEVICE_FLAG_INT_RX);
+	}
+}
 #endif /* end of UART */
 
 
 
+int show_uart(int num)
+{	
+	rt_uart_show(num);	
+	return RT_EOK;
+}
+
+//FINSH_FUNCTION_EXPORT(show_uart,uart registers show(num)0to4);
+
+
+
+
 /*@}*/
+
+
+

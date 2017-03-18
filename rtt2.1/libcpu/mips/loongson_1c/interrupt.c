@@ -31,7 +31,7 @@ void rt_interrupt_dispatch(void *ptreg);
 void rt_hw_timer_handler();
 
 static struct ls1c_intc_regs volatile *ls1c_hw0_icregs
-= (struct ls1c_intc_regs volatile *)(LS1C_INTREG_BASE);
+= (struct ls1c_intc_regs volatile *)(LS1C_INT0_BASE);
 
 /**
  * @addtogroup Loongson LS1B
