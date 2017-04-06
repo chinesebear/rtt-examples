@@ -145,9 +145,9 @@ struct ls1c_cop_regs
 #define __REG32(addr)		*((volatile unsigned int *)(addr))
 
 #define GMAC0_BASE			0xBFE10000
-#define GMAC0_DMA_BASE	0xBFE11000
+#define GMAC0_DMA_BASE		0xBFE11000
 #define GMAC1_BASE			0xBFE20000
-#define GMAC1_DMA_BASE	0xBFE21000
+#define GMAC1_DMA_BASE		0xBFE21000
 #define I2C0_BASE			0xBFE58000
 #define WDT_BASE			0xBFE5C060
 #define RTC_BASE			0xBFE64000
@@ -155,7 +155,7 @@ struct ls1c_cop_regs
 #define I2C2_BASE			0xBFE70000
 #define AC97_BASE			0xBFE74000
 #define NAND_BASE			0xBFE78000
-#define SPI_BASE			       0xBFE80000
+#define SPI_BASE			0xBFE80000
 #define CAN1_BASE			0xBF004300
 #define CAN0_BASE			0xBF004400
 

@@ -13,13 +13,14 @@
  * 2010-10-15     lgnq           modified for LS1B
  * 2013-03-29     aozima       Modify the interrupt interface implementations.
  * 2015-07-06     chinesebear modified for loongson 1c
+ * 2017-04-06     chinesebear  add int1~int4 registers
  */
 
 #include <rtthread.h>
 #include <rthw.h>
 #include "ls1c.h"
 
-#define MAX_INTR 32
+#define MAX_INTR 160
 
 extern rt_uint32_t rt_interrupt_nest;
 rt_uint32_t rt_interrupt_from_thread;
@@ -32,6 +33,19 @@ void rt_hw_timer_handler();
 
 static struct ls1c_intc_regs volatile *ls1c_hw0_icregs
 = (struct ls1c_intc_regs volatile *)(LS1C_INT0_BASE);
+
+static struct ls1c_intc_regs volatile *ls1c_hw1_icregs
+= (struct ls1c_intc_regs volatile *)(LS1C_INT1_BASE);
+
+static struct ls1c_intc_regs volatile *ls1c_hw2_icregs
+= (struct ls1c_intc_regs volatile *)(LS1C_INT2_BASE);
+
+static struct ls1c_intc_regs volatile *ls1c_hw3_icregs
+= (struct ls1c_intc_regs volatile *)(LS1C_INT3_BASE);
+
+static struct ls1c_intc_regs volatile *ls1c_hw4_icregs
+= (struct ls1c_intc_regs volatile *)(LS1C_INT4_BASE);
+
 
 /**
  * @addtogroup Loongson LS1B
@@ -53,11 +67,22 @@ void rt_hw_interrupt_init(void)
 
     /* pci active low */
     ls1c_hw0_icregs->int_pol = -1;	   //must be done here 20110802 lgnq
-    /* make all interrupts level triggered */
+	ls1c_hw1_icregs->int_pol = -1;
+	ls1c_hw2_icregs->int_pol = -1;
+	ls1c_hw3_icregs->int_pol = -1;
+	ls1c_hw4_icregs->int_pol = -1;
+	/* make all interrupts level triggered */
     (ls1c_hw0_icregs+0)->int_edge = 0x0000e000;
+	 ls1c_hw1_icregs->int_edge = 0x00000000;
+	 ls1c_hw2_icregs->int_edge = 0x00000000;
+	 ls1c_hw3_icregs->int_edge = 0x00000000;
+	 ls1c_hw4_icregs->int_edge = 0x00000000;
     /* mask all interrupts */
     (ls1c_hw0_icregs+0)->int_clr = 0xffffffff;
-
+	ls1c_hw1_icregs->int_clr = 0xffffffff;
+	ls1c_hw2_icregs->int_clr = 0xffffffff;
+	ls1c_hw3_icregs->int_clr = 0xffffffff;
+	ls1c_hw4_icregs->int_clr = 0xffffffff;
     rt_memset(irq_handle_table, 0x00, sizeof(irq_handle_table));
     for (idx = 0; idx < MAX_INTR; idx ++)
     {
@@ -78,7 +103,37 @@ void rt_hw_interrupt_init(void)
 void rt_hw_interrupt_mask(int vector)
 {
     /* mask interrupt */
-    (ls1c_hw0_icregs+(vector>>5))->int_en &= ~(1 << (vector&0x1f));
+    //(ls1c_hw0_icregs+(vector>>5))->int_en &= ~(1 << (vector&0x1f));
+	struct ls1c_intc_regs volatile *ls1c_irq_reg;
+	int posbit=0;
+	if(vector >= 0 && vector <=31)
+	{
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT0_BASE);
+		posbit = vector;
+	}
+	else if(vector >= 32 && vector <=63)
+	{
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT1_BASE);
+		posbit = vector -32;
+	}
+	else if(vector >= 64 && vector <=95)
+	{
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT2_BASE);
+		posbit = vector -64;
+	}
+	else if(vector >= 96 && vector <=127)
+	{
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT3_BASE);
+		posbit = vector -96;
+	}
+	else if(vector >= 128 && vector <=160)
+	{
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT4_BASE);
+		posbit = vector -128;
+	}
+	else
+		return ;
+	ls1c_irq_reg->int_en &= ~(1 << posbit);
 }
 
 /**
@@ -87,7 +142,37 @@ void rt_hw_interrupt_mask(int vector)
  */
 void rt_hw_interrupt_umask(int vector)
 {
-    (ls1c_hw0_icregs+(vector>>5))->int_en |= (1 << (vector&0x1f));
+    //(ls1c_hw0_icregs+(vector>>5))->int_en |= (1 << (vector&0x1f));
+    struct ls1c_intc_regs volatile *ls1c_irq_reg;
+	int posbit=0;
+	if(vector >= 0 && vector <=31)
+	{
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT0_BASE);
+		posbit = vector;
+	}
+	else if(vector >= 32 && vector <=63)
+	{
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT1_BASE);
+		posbit = vector -32;
+	}
+	else if(vector >= 64 && vector <=95)
+	{
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT2_BASE);
+		posbit = vector -64;
+	}
+	else if(vector >= 96 && vector <=127)
+	{
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT3_BASE);
+		posbit = vector -96;
+	}
+	else if(vector >= 128 && vector <=160)
+	{
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT4_BASE);
+		posbit = vector -128;
+	}
+	else
+		return ;
+	ls1c_irq_reg->int_en |= (1 << posbit);
 }
 
 /**
@@ -126,7 +211,11 @@ void rt_interrupt_dispatch(void *ptreg)
     volatile rt_uint32_t cause_im;
     volatile rt_uint32_t status_im;
     rt_uint32_t pending_im;
-
+	int ipflag = 0;
+	int irqMaxNo=0;
+	int irqMinNo=0;
+	int posbit = 0;
+	struct ls1c_intc_regs volatile *ls1c_irq_reg;
     /* check os timer */
     c0_status = read_c0_status();
     c0_cause = read_c0_cause();
@@ -142,16 +231,60 @@ void rt_interrupt_dispatch(void *ptreg)
 
     if (pending_im & CAUSEF_IP2)
     {
-        /* the hardware interrupt */
+		ipflag = 1;//0~31
+		irqMinNo = 0;
+		irqMaxNo = 31;
+		/* the hardware interrupt */
         status = ls1c_hw0_icregs->int_isr;
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT0_BASE);
+    }
+    else if (pending_im & CAUSEF_IP3)
+    {
+        ipflag = 2;//32~63
+        irqMinNo = 32;
+		irqMaxNo = 63;
+		/* the hardware interrupt */
+        status = ls1c_hw1_icregs->int_isr;
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT1_BASE);
+    }
+    else if (pending_im & CAUSEF_IP4)
+    {
+        ipflag = 3;//64~95
+        irqMinNo = 64;
+		irqMaxNo = 95;
+		/* the hardware interrupt */
+        status = ls1c_hw2_icregs->int_isr;
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT2_BASE);
+    }
+    else if (pending_im & CAUSEF_IP5)
+    {
+        ipflag = 4;//96~127
+        irqMinNo = 96;
+		irqMaxNo = 127;
+		/* the hardware interrupt */
+        status = ls1c_hw3_icregs->int_isr;
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT3_BASE);
+    }
+    else if (pending_im & CAUSEF_IP6)
+    {
+        ipflag = 5;//128~159
+        irqMinNo = 128;
+		irqMaxNo = 159;
+		/* the hardware interrupt */
+        status = ls1c_hw4_icregs->int_isr;
+		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT4_BASE);
+    }
+	if(ipflag)
+	{
+		
         if (!status)
             return;
 
-        for (irq = MAX_INTR; irq > 0; --irq)
+        for (irq = irqMinNo,posbit=0; irq <= irqMaxNo && posbit < 32; irq++,posbit++)
         {
-            if ((status & (1 << irq)))
+            if ((status & (1 << posbit)))
             {
-                status &= ~(1 << irq);
+                status &= ~(1 << posbit);
 
                 irq_func = irq_handle_table[irq].handler;
                 param = irq_handle_table[irq].param;
@@ -164,26 +297,10 @@ void rt_interrupt_dispatch(void *ptreg)
 #endif /* RT_USING_INTERRUPT_INFO */
 
                 /* ack interrupt */
-                ls1c_hw0_icregs->int_clr |= (1 << irq);
+                ls1c_irq_reg->int_clr |= (1 << posbit);
             }
         }
-    }
-    else if (pending_im & CAUSEF_IP3)
-    {
-        rt_kprintf("%s %d\r\n", __FUNCTION__, __LINE__);
-    }
-    else if (pending_im & CAUSEF_IP4)
-    {
-        rt_kprintf("%s %d\r\n", __FUNCTION__, __LINE__);
-    }
-    else if (pending_im & CAUSEF_IP5)
-    {
-        rt_kprintf("%s %d\r\n", __FUNCTION__, __LINE__);
-    }
-    else if (pending_im & CAUSEF_IP6)
-    {
-        rt_kprintf("%s %d\r\n", __FUNCTION__, __LINE__);
-    }
+	}
 }
 
 /*@}*/
