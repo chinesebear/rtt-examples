@@ -103,37 +103,7 @@ void rt_hw_interrupt_init(void)
 void rt_hw_interrupt_mask(int vector)
 {
     /* mask interrupt */
-    //(ls1c_hw0_icregs+(vector>>5))->int_en &= ~(1 << (vector&0x1f));
-	struct ls1c_intc_regs volatile *ls1c_irq_reg;
-	int posbit=0;
-	if(vector >= 0 && vector <=31)
-	{
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT0_BASE);
-		posbit = vector;
-	}
-	else if(vector >= 32 && vector <=63)
-	{
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT1_BASE);
-		posbit = vector -32;
-	}
-	else if(vector >= 64 && vector <=95)
-	{
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT2_BASE);
-		posbit = vector -64;
-	}
-	else if(vector >= 96 && vector <=127)
-	{
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT3_BASE);
-		posbit = vector -96;
-	}
-	else if(vector >= 128 && vector <=160)
-	{
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT4_BASE);
-		posbit = vector -128;
-	}
-	else
-		return ;
-	ls1c_irq_reg->int_en &= ~(1 << posbit);
+    (ls1c_hw0_icregs+(vector>>5))->int_en &= ~(1 << (vector&0x1f));
 }
 
 /**
@@ -142,37 +112,7 @@ void rt_hw_interrupt_mask(int vector)
  */
 void rt_hw_interrupt_umask(int vector)
 {
-    //(ls1c_hw0_icregs+(vector>>5))->int_en |= (1 << (vector&0x1f));
-    struct ls1c_intc_regs volatile *ls1c_irq_reg;
-	int posbit=0;
-	if(vector >= 0 && vector <=31)
-	{
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT0_BASE);
-		posbit = vector;
-	}
-	else if(vector >= 32 && vector <=63)
-	{
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT1_BASE);
-		posbit = vector -32;
-	}
-	else if(vector >= 64 && vector <=95)
-	{
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT2_BASE);
-		posbit = vector -64;
-	}
-	else if(vector >= 96 && vector <=127)
-	{
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT3_BASE);
-		posbit = vector -96;
-	}
-	else if(vector >= 128 && vector <=160)
-	{
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT4_BASE);
-		posbit = vector -128;
-	}
-	else
-		return ;
-	ls1c_irq_reg->int_en |= (1 << posbit);
+    (ls1c_hw0_icregs+(vector>>5))->int_en |= (1 << (vector&0x1f));
 }
 
 /**
@@ -199,7 +139,47 @@ rt_isr_handler_t rt_hw_interrupt_install(int vector, rt_isr_handler_t handler,
 
     return old_handler;
 }
+static rt_uint32_t  ls1x_ffs(rt_uint32_t intstatus)
+{
+	rt_uint32_t i;
+	for(i=0;i<32;i++)
+	{
+		if(intstatus&(1<<i))break;
+	}
+	return i;
+}
+static void ls1x_do_IRQ(rt_uint32_t irq)
+{
+	void *param;
+    rt_isr_handler_t irq_func;
+	irq_func = irq_handle_table[irq].handler;
+    param = irq_handle_table[irq].param;
 
+    /* do interrupt */
+    irq_func(irq, param);
+
+#ifdef RT_USING_INTERRUPT_INFO
+    irq_handle_table[irq].counter++;
+#endif /* RT_USING_INTERRUPT_INFO */
+}
+
+static void ls1x_irq_dispatch(int n)
+{
+	rt_uint32_t intstatus, irq;
+
+	/* Receive interrupt signal, compute the irq */
+	intstatus = (ls1c_hw0_icregs+n)->int_isr & (ls1c_hw0_icregs+n)->int_en;
+	if (intstatus) {
+		irq = ls1x_ffs(intstatus);
+		ls1x_do_IRQ((n<<5) + irq - 1);
+		/* ack interrupt */
+		//(ls1c_hw0_icregs+n)->int_clr |= (1 << irq);
+	}
+}
+static void ls1x_spurious_interrupt(void)
+{
+	return ;
+}
 void rt_interrupt_dispatch(void *ptreg)
 {
     int irq;
@@ -223,12 +203,31 @@ void rt_interrupt_dispatch(void *ptreg)
     cause_im = c0_cause & ST0_IM;
     status_im = c0_status & ST0_IM;
     pending_im = cause_im & status_im;
-
+	#if 0
     if (pending_im & CAUSEF_IP7)
     {
         rt_hw_timer_handler();
     }
-
+	else if (pending_im & CAUSEF_IP2) {
+		ls1x_irq_dispatch(0);
+	}
+	else if (pending_im & CAUSEF_IP3) {
+		ls1x_irq_dispatch(1);
+	}
+	else if (pending_im & CAUSEF_IP4) {
+		ls1x_irq_dispatch(2);
+	}
+	else if (pending_im & CAUSEF_IP5) {
+		ls1x_irq_dispatch(3);
+	}
+	else if (pending_im & CAUSEF_IP6) {
+		ls1x_irq_dispatch(4);
+	} else {
+		ls1x_spurious_interrupt();//IP0~1 soft interrupt
+	}
+	
+	#else
+	
     if (pending_im & CAUSEF_IP2)
     {
 		ipflag = 1;//0~31
@@ -301,6 +300,7 @@ void rt_interrupt_dispatch(void *ptreg)
             }
         }
 	}
+	#endif
 }
 
 /*@}*/
