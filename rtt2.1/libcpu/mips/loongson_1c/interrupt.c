@@ -171,7 +171,7 @@ static void ls1x_irq_dispatch(int n)
 	intstatus = (ls1c_hw0_icregs+n)->int_isr & (ls1c_hw0_icregs+n)->int_en;
 	if (intstatus) {
 		irq = ls1x_ffs(intstatus);
-		ls1x_do_IRQ((n<<5) + irq - 1);
+		ls1x_do_IRQ((n<<5) + irq);
 		/* ack interrupt */
 		//(ls1c_hw0_icregs+n)->int_clr |= (1 << irq);
 	}
@@ -203,7 +203,6 @@ void rt_interrupt_dispatch(void *ptreg)
     cause_im = c0_cause & ST0_IM;
     status_im = c0_status & ST0_IM;
     pending_im = cause_im & status_im;
-	#if 0
     if (pending_im & CAUSEF_IP7)
     {
         rt_hw_timer_handler();
@@ -225,82 +224,6 @@ void rt_interrupt_dispatch(void *ptreg)
 	} else {
 		ls1x_spurious_interrupt();//IP0~1 soft interrupt
 	}
-	
-	#else
-	
-    if (pending_im & CAUSEF_IP2)
-    {
-		ipflag = 1;//0~31
-		irqMinNo = 0;
-		irqMaxNo = 31;
-		/* the hardware interrupt */
-        status = ls1c_hw0_icregs->int_isr;
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT0_BASE);
-    }
-    else if (pending_im & CAUSEF_IP3)
-    {
-        ipflag = 2;//32~63
-        irqMinNo = 32;
-		irqMaxNo = 63;
-		/* the hardware interrupt */
-        status = ls1c_hw1_icregs->int_isr;
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT1_BASE);
-    }
-    else if (pending_im & CAUSEF_IP4)
-    {
-        ipflag = 3;//64~95
-        irqMinNo = 64;
-		irqMaxNo = 95;
-		/* the hardware interrupt */
-        status = ls1c_hw2_icregs->int_isr;
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT2_BASE);
-    }
-    else if (pending_im & CAUSEF_IP5)
-    {
-        ipflag = 4;//96~127
-        irqMinNo = 96;
-		irqMaxNo = 127;
-		/* the hardware interrupt */
-        status = ls1c_hw3_icregs->int_isr;
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT3_BASE);
-    }
-    else if (pending_im & CAUSEF_IP6)
-    {
-        ipflag = 5;//128~159
-        irqMinNo = 128;
-		irqMaxNo = 159;
-		/* the hardware interrupt */
-        status = ls1c_hw4_icregs->int_isr;
-		ls1c_irq_reg = (struct ls1c_intc_regs volatile *)(LS1C_INT4_BASE);
-    }
-	if(ipflag)
-	{
-		
-        if (!status)
-            return;
-
-        for (irq = irqMinNo,posbit=0; irq <= irqMaxNo && posbit < 32; irq++,posbit++)
-        {
-            if ((status & (1 << posbit)))
-            {
-                status &= ~(1 << posbit);
-
-                irq_func = irq_handle_table[irq].handler;
-                param = irq_handle_table[irq].param;
-
-                /* do interrupt */
-                irq_func(irq, param);
-
-#ifdef RT_USING_INTERRUPT_INFO
-                irq_handle_table[irq].counter++;
-#endif /* RT_USING_INTERRUPT_INFO */
-
-                /* ack interrupt */
-                ls1c_irq_reg->int_clr |= (1 << posbit);
-            }
-        }
-	}
-	#endif
 }
 
 /*@}*/
