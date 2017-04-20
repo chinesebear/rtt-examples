@@ -4,5 +4,15 @@
 	创建线程2。在线程中，处理来自UART3的数据即G618模块的AT协议数据。
 	通过AT指令配置G618模块，实现数据透传。
 	代码是通过状态机方式分部配置，比如APN、PDP、TCP、socket
+	M2M工程：
+	一、TCP测试
+	AT+ESLP=0							//禁止睡眠，以免影响测试
+	AT+EGDCONT=0,"IP","CMNET"			//设置APN
+	AT+ETCPIP=1,0						//激活PDP
+	AT+ETL=1,0,0,"121.43.113.60",6000	//创建TCP
+	+ETL: 1								//创建TCP成功，返回SOCKETID,后面发送、接收、关闭要用到
+	AT+ETL=0,1							//关闭SocketID 1 一般不需要用
+	AT+ETLTS=SOCKETID					//设置透传    没有回复代表 设置OK了，可以透传数据了然后就可以发送数据
+	AT+ETL=0,1							//关闭连接，后面的1为SOCKETID
 目的：
 	通过AT指令配置G618模块，实现数据透传。
