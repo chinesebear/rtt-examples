@@ -31,6 +31,7 @@
 #define AT_IDLE						10
 #define AT_NOP						11
 
+#define AT_DEBUG					0
 #define SEND_TO_GSM					0
 #define RECV_FROM_GSM				1
 extern rt_device_t uart_dev[];
@@ -105,6 +106,8 @@ struct gt02a_packet{
 }GpsPacket;
 
 static rt_uint32_t infoSnCnt = 1;
+#define  atCmdGapTime  		300 //tick
+#define  atUart3RxTimeOut   400 //tick
 
 
 static void DumpData(const rt_uint8_t *pcStr,rt_uint8_t *pucBuf,rt_uint32_t usLen)
@@ -114,14 +117,13 @@ static void DumpData(const rt_uint8_t *pcStr,rt_uint8_t *pucBuf,rt_uint32_t usLe
     rt_uint8_t acTmp[17];
     rt_uint8_t *p;
     rt_uint8_t *pucAddr = pucBuf;
-
-    if(pcStr)
-    {
-        rt_kprintf("%s: length = %d [0x%X]\r\n", pcStr, usLen, usLen);
-    }
     if(usLen == 0)
     {
         return;
+    }
+	    if(pcStr)
+    {
+        rt_kprintf("%s: length = %d [0x%X]\r\n", pcStr, usLen, usLen);
     }
     p = acTmp;
     rt_kprintf("%p  ", pucAddr);
@@ -171,6 +173,55 @@ static void DumpData(const rt_uint8_t *pcStr,rt_uint8_t *pucBuf,rt_uint32_t usLe
         rt_kprintf("\r\n");
     }
 }
+static int AtStr2Hex(const char* src, unsigned char* dest)
+{
+	int srcLen,destLen;
+	unsigned char val;
+	unsigned char tmp;
+	int i =0;
+	//rt_kprintf("Entering AtStr2Hex()\r\n");
+	if(src == NULL || dest == NULL)
+	{
+		return -1;
+	}
+	srcLen = strlen(src);
+	//rt_kprintf("srcLen = %d\r\n",srcLen);
+	if(srcLen < 1)
+	{
+		return -2;
+	}
+
+	if(srcLen%2)
+		destLen = srcLen/2 + 1;
+	else
+		destLen = srcLen/2;
+	rt_memset(dest,0x00,destLen);	//clr dest buf
+	//rt_kprintf("AtStr2Hex()--1\r\n");
+	for(i=0;i < srcLen;i++)
+	{
+		tmp = *(src+ i);
+		if(tmp >= '0' && tmp <= '9')
+		{
+			val = tmp -'0';
+		}
+		else if(tmp >= 'A' && tmp <= 'F')
+		{
+			val = tmp -'A' + 10;
+		}
+		else 
+			return -3;
+		if(i%2 == 0)//high half byte
+		{
+			*(dest+ i/2) |= (val<<4);
+		}
+		else // low half byte
+		{
+			*(dest+ i/2) |= val;
+		}
+		//rt_kprintf("dest(%d) = 0x%02X\r\n",i/2,*(dest+ i/2));
+	}
+	return 0;
+}
 static rt_uint16_t AtGetCrc16(const rt_uint8_t* pData, int nLength)
 {
 	rt_uint16_t fcs = 0xffff; 
@@ -186,12 +237,12 @@ static int AtReponseDataCompare(rt_uint8_t* rxdata, int rxsize,const char* compa
 {
 	int i =0;
 	int tpos = 0;
+	int cmpStrSize = 0,flagCmp = 0;
 	if(rxsize == 0)
 	{
 		rt_kprintf("compare rxsize=%d\r\n",rxsize);
 		return 0;
 	}
-	
 	while(i<rxsize)
 	{
 
@@ -199,16 +250,32 @@ static int AtReponseDataCompare(rt_uint8_t* rxdata, int rxsize,const char* compa
 		{
 			*pos = i;
 			tpos = i;
+			break;
 		}
-
+		i++;
+	}
+	i =0;
+	while(i<rxsize )
+	{
 		if(rxdata[i] == '\r' || rxdata[i] == '\n')
 		{
 			rxdata[i] = '\0';
 		}
 		i++;
 	}
+	cmpStrSize =strlen(comparedta);
+	#if AT_DEBUG
 	DumpData("DataCompare",(rxdata+tpos),(rxsize-tpos));
-	if(rt_memcmp(comparedta,(rxdata+tpos),strlen(comparedta))== 0)
+	#endif
+	for(i = 0; i<(rxsize-tpos) ;i++)
+	{
+		if(rt_memcmp(comparedta,(rxdata+tpos),cmpStrSize)== 0)
+		{
+			flagCmp  = 1;
+			break;
+		}
+	}
+	if(flagCmp)
 		return 0;
 	else
 		return tpos;// response data stata postion
@@ -218,7 +285,12 @@ static int AtStrCompare(const void * recvBuf,const int recvSize,const void* cmpS
 	int i,iRet =0;
 	int cmpStrSize;
 	cmpStrSize = strlen(cmpStr);
-	DumpData("StrCompare",(rt_uint8_t *)recvBuf,recvSize);
+	#if AT_DEBUG
+	{
+		DumpData("StrCompare",(rt_uint8_t *)recvBuf,recvSize);
+		DumpData("StrCmpwith",(rt_uint8_t *)cmpStr,cmpStrSize);
+	}
+	#endif
 	for(i = 0; i< recvSize;i++)
 	{
 		if(rt_memcmp(recvBuf+i,cmpStr,cmpStrSize)==0)
@@ -229,9 +301,29 @@ static int AtStrCompare(const void * recvBuf,const int recvSize,const void* cmpS
 	}
 	return iRet;
 }
+static int AtReturnSocketId(const rt_uint8_t * recvBuf,const int recvSize)
+{
+	int i,socketId = -1,offset = 0;
+	const rt_uint8_t* cmpStr ="+ETL: ";
+	int cmpStrSize = strlen(cmpStr);
+	for(i = 0; i< recvSize;i++)
+	{
+		if(rt_memcmp(recvBuf+i,cmpStr,cmpStrSize)==0)
+		{
+			offset = i;
+			break;
+		}
+	}
+	socketId = recvBuf[offset+6] -'0';
+	return socketId;
+}
+
 static void AtCombineGpsData(struct gt02a_packet * packet,rt_uint8_t* txbuffer)
 {
 	if(packet == NULL || txbuffer == NULL)return ;
+	const char* ptDat = "686825266A03586880000001580001100A0C1E0A2E05027AC8390C4657C5000156001DF1000000060D0A";
+	AtStr2Hex(ptDat,txbuffer);
+	#if 0
 	rt_memset(txbuffer,0x68,2);//start
 	rt_memset(txbuffer+2,0x25,1);//length 37
 	rt_memcpy(txbuffer+3,packet->LAC,2);
@@ -248,32 +340,73 @@ static void AtCombineGpsData(struct gt02a_packet * packet,rt_uint8_t* txbuffer)
 	rt_memcpy(txbuffer+36,packet->info.state,4);
 	rt_memset(txbuffer+40,0x0D,1);//exit
 	rt_memset(txbuffer+41,0x0A,1);
+	#endif
 }
 static rt_size_t AtUart3Read(rt_device_t dev,void *buffer,rt_size_t   size)
 {
-	int rx_size = 0;
+	int rx_size = 0,rx_size1 =0;
 	int i=0,j=0,flag = 0;
 	unsigned char * tmp;
 	tmp = (unsigned char*)buffer;
-	while(i<100)
+	while(i < atUart3RxTimeOut)
 	{
-		rt_thread_delay(2);
-		rx_size = rt_device_read(dev,0,buffer,size);
-		
-		for(j = 0;j < rx_size;j++)
+		// check string with key words "ERROR" & "OK"
+		if(AtStrCompare(buffer,rx_size,"ERROR")|| AtStrCompare(buffer,rx_size,"OK"))
 		{
-			if(tmp[j]!='\n' && tmp[j] != '\r' && tmp[j] != '\0')
+			break;
+		}
+		rt_thread_delay(2);
+		rx_size1 = rt_device_read(dev,0,buffer+rx_size,size-rx_size);
+		rx_size += rx_size1;//update rx_size value
+		if(rx_size)break;
+		i++;
+	}
+	DumpData("Uart3Rx",buffer,rx_size);
+	return rx_size;
+}
+
+static rt_size_t AtUart3ReadTimeOut(rt_device_t dev,void *buffer,rt_size_t   size,int TimeOutMs)
+{
+	int rx_size = 0,rx_size1 =0;
+	int i=0,j=0,flag = 0;
+	int flagLoop=1;
+	int ticktimeout=0;
+	unsigned char * tmp;
+	tmp = (unsigned char*)buffer;
+	if(TimeOutMs == -1)
+	{
+		while(1)
+		{
+			// check string with key words "ERROR" & "OK"
+			if(AtStrCompare(buffer,rx_size,"ERROR")|| AtStrCompare(buffer,rx_size,"OK"))
 			{
-				flag = 1;
 				break;
 			}
+			rt_thread_delay(2);
+			rx_size1 = rt_device_read(dev,0,buffer+rx_size,size-rx_size);
+			rx_size += rx_size1;//update rx_size value
 		}
-		if(flag) break;
-		i++;
+	}
+	else
+	{
+		ticktimeout = TimeOutMs / 20;
+		while(i < ticktimeout)
+		{
+			// check string with key words "ERROR" & "OK"
+			if(AtStrCompare(buffer,rx_size,"ERROR")|| AtStrCompare(buffer,rx_size,"OK"))
+			{
+				break;
+			}
+			rt_thread_delay(2);
+			rx_size1 = rt_device_read(dev,0,buffer+rx_size,size-rx_size);
+			rx_size += rx_size1;//update rx_size value
+			i++;
+		}
 	}
 	DumpData("AtUart3Rx",buffer,rx_size);
 	return rx_size;
 }
+
 
 void rt_init_thread_entry(void *parameter)
 {
@@ -328,8 +461,11 @@ void rt_run_example_thread_entry(void *parameter)
 		rt_memset(GpsPacket.info.MNC,0x00,1);
 		rt_memcpy(GpsPacket.info.cellID,"\x00\x00\x00\x01",4);
 		rt_memcpy(GpsPacket.info.state,"\x00\x00\x00\x07",4);
-		AtCombineGpsData(&GpsPacket,pt_tx_buffer);
-		pt_tx_size = 42;
+		if(pt_tx_size == 0)
+		{
+			AtCombineGpsData(&GpsPacket,pt_tx_buffer);
+			pt_tx_size = 42;
+		}
 		rt_thread_delay(100);
 	}
 	rt_kprintf("never get here...\r\n");
@@ -344,7 +480,6 @@ void rt_run_example2_thread_entry(void *parameter)
 	rt_uint8_t rx_buffer[256];
 	rt_uint8_t tx_buffer[256];
 	int pos,iRet;
-	int atCmdGapTime = 300;//tick
 	rt_kprintf("uart3 thread start...\r\n");
 	 newdev = rt_device_find("uart3");
 	if(newdev == NULL)
@@ -366,7 +501,7 @@ void rt_run_example2_thread_entry(void *parameter)
 		switch(atstate)
 		{
 			case AT_START:
-				rt_device_read(newdev,0,rx_buffer,rx_size);
+				rx_size = rt_device_read(newdev,0,rx_buffer,256);
 				iRet = AtStrCompare(rx_buffer,rx_size,"+EUSIM: 1");
 				if(iRet)
 				{
@@ -385,7 +520,7 @@ void rt_run_example2_thread_entry(void *parameter)
 				}
 				else if(linkgsm == RECV_FROM_GSM)
 				{
-					rx_size = AtUart3Read(newdev,rx_buffer,256);
+					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
 					iRet = AtReponseDataCompare(rx_buffer,rx_size,"OK",&pos);
 					if(iRet == 0 && rx_size)
 					{
@@ -417,7 +552,7 @@ void rt_run_example2_thread_entry(void *parameter)
 				}
 				else if(linkgsm == RECV_FROM_GSM)
 				{
-					rx_size = AtUart3Read(newdev,rx_buffer,256);
+					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
 					iRet = AtReponseDataCompare(rx_buffer,rx_size,"OK",&pos);
 					if(iRet == 0 && rx_size)
 					{
@@ -449,7 +584,7 @@ void rt_run_example2_thread_entry(void *parameter)
 				}
 				else if(linkgsm == RECV_FROM_GSM)
 				{
-					rx_size = AtUart3Read(newdev,rx_buffer,256);
+					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
 					iRet = AtReponseDataCompare(rx_buffer,rx_size,"OK",&pos);
 					if(iRet == 0 && rx_size)
 					{
@@ -480,7 +615,7 @@ void rt_run_example2_thread_entry(void *parameter)
 				}
 				else if(linkgsm == RECV_FROM_GSM)
 				{
-					rx_size = AtUart3Read(newdev,rx_buffer,256);
+					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
 					iRet = AtReponseDataCompare(rx_buffer,rx_size,"OK",&pos);
 					if(iRet == 0 && rx_size)
 					{
@@ -511,13 +646,13 @@ void rt_run_example2_thread_entry(void *parameter)
 				}
 				else if(linkgsm == RECV_FROM_GSM)
 				{
-					rx_size = AtUart3Read(newdev,rx_buffer,256);
-					iRet = AtReponseDataCompare(rx_buffer,rx_size,"+ETL:",&pos);
+					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
+					iRet = AtReponseDataCompare(rx_buffer,rx_size,"OK",&pos);
 					if(iRet == 0 && rx_size)
 					{
 						atstate = AT_SET_PASSTHROUGH;
-						socketID = rx_buffer[pos+6] -'0';// maybe bug in future
-						rt_kprintf("[AT_CREATE_TCP] socketID=%s\r\n",socketID);
+						socketID = AtReturnSocketId(rx_buffer,rx_size);
+						rt_kprintf("[AT_CREATE_TCP] socketID=%d\r\n",socketID);
 						rt_thread_delay(atCmdGapTime);
 					}
 					else
@@ -538,24 +673,20 @@ void rt_run_example2_thread_entry(void *parameter)
 				{
 					rt_kprintf("[AT_SET_PASSTHROUGH] enter\r\n");
 					ATcmd = "AT+ETLTS=";
-					DumpData("ATcmd",ATcmd,strlen(ATcmd));
-					rt_snprintf(tx_buffer,strlen(ATcmd)+1,"%s%d",ATcmd,socketID);
-					rt_device_write(newdev,0,tx_buffer,strlen(ATcmd)+1);
+					rt_snprintf(tx_buffer,strlen(ATcmd)+2,"%s%d",ATcmd,socketID);
+					tx_buffer[10] = 0x0A;
+					DumpData("ATcmd",tx_buffer,strlen(tx_buffer));
+					rt_device_write(newdev,0,tx_buffer,strlen(tx_buffer));
 					linkgsm = RECV_FROM_GSM;
 				}
 				else if(linkgsm == RECV_FROM_GSM)
 				{
-					rx_size = AtUart3Read(newdev,rx_buffer,256);
-					iRet = AtReponseDataCompare(rx_buffer,rx_size,"OK",&pos);
-					if(rx_size == 0)
+					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,4000);
+					//iRet = AtReponseDataCompare(rx_buffer,rx_size,"ERROR",&pos);
 					{
 						atstate = AT_PASSTHROUGH_TX;
-						rt_kprintf("[AT_ACIVIATE_PDP] OK\r\n");
+						rt_kprintf("[AT_SET_PASSTHROUGH] OK\r\n");
 						rt_thread_delay(atCmdGapTime);
-					}
-					else
-					{
-						rt_kprintf("[AT_ACIVIATE_PDP](error)\r\n");
 					}
 					rt_kprintf("[AT_SET_PASSTHROUGH] exit\r\n");
 					linkgsm = SEND_TO_GSM;
@@ -569,7 +700,6 @@ void rt_run_example2_thread_entry(void *parameter)
 			case AT_PASSTHROUGH_TX:
 				rt_kprintf("[AT_PASSTHROUGH_TX] enter\r\n");
 				rt_device_write(newdev,0,pt_tx_buffer,pt_tx_size);
-				DumpData("ATcmd",ATcmd,strlen(ATcmd));
 				atstate = AT_PASSTHROUGH_RX;
 				DumpData("pt_data_tx",pt_tx_buffer,pt_tx_size);
 				infoSnCnt++;
@@ -579,12 +709,19 @@ void rt_run_example2_thread_entry(void *parameter)
 				break;
 			case AT_PASSTHROUGH_RX:
 				rt_kprintf("[AT_PASSTHROUGH_RX] enter\r\n");
-				DumpData("ATcmd",ATcmd,strlen(ATcmd));
-				rt_thread_delay(200);
+				rt_thread_delay(100);
 				rt_memset(pt_rx_buffer,0,256);
 				pt_rx_size = rt_device_read(newdev,0,pt_rx_buffer,256);
-				atstate = AT_IDLE;
-				DumpData("pt_data_rx",pt_rx_buffer,pt_rx_size);
+				if(pt_rx_size)
+				{
+					atstate = AT_IDLE;
+					DumpData("pt_data_rx",pt_rx_buffer,pt_rx_size);
+				}
+				else
+				{
+					atstate = AT_PASSTHROUGH_RX;
+					rt_kprintf("[AT_PASSTHROUGH_RX] receive no data\r\n");
+				}
 				rt_kprintf("[AT_PASSTHROUGH_RX] exit\r\n");
 				break;
 			case AT_CLOSE_SOCKET:
@@ -600,7 +737,7 @@ void rt_run_example2_thread_entry(void *parameter)
 				}
 				else if(linkgsm == RECV_FROM_GSM)
 				{
-					rx_size = AtUart3Read(newdev,rx_buffer,256);
+					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
 					iRet = AtReponseDataCompare(rx_buffer,rx_size,"OK",&pos);
 					if(iRet == 0 && rx_size)
 					{
