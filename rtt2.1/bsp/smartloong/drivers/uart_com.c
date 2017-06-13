@@ -231,6 +231,7 @@ static rt_size_t rt_uart_com_write(rt_device_t dev, rt_off_t pos, const void *bu
 		/* stream mode */
 		while (size)
 		{
+			#if 0
 			if (*ptr == '\n')
 			{
 				/* FIFO status, contain valid data */
@@ -238,7 +239,7 @@ static rt_size_t rt_uart_com_write(rt_device_t dev, rt_off_t pos, const void *bu
 				/* write data */
 				UART_DAT(uart->hw_base) = '\r';
 			}
-
+			#endif
 			/* FIFO status, contain valid data */
 			while (!(UART_LSR(uart->hw_base) & (UARTLSR_TE | UARTLSR_TFE)));
 			/* write data */

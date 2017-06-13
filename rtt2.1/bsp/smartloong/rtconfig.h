@@ -135,11 +135,17 @@
 // </section>
 
 // <section name="RT_USING_LWIP" description="lwip, a lightweight TCP/IP protocol stack" default="true" >
-// #define RT_USING_LWIP
+#define RT_USING_LWIP
+#define RT_USING_GMAC_INT_MODE
+#define RT_USING_LWIP141
+//#define RT_LWIP_DEBUG
+#define RT_LWIP_USING_RT_MEM
+
+
 // <bool name="RT_LWIP_ICMP" description="Enable ICMP protocol" default="true" />
 #define RT_LWIP_ICMP
 // <bool name="RT_LWIP_IGMP" description="Enable IGMP protocol" default="false" />
-// #define RT_LWIP_IGMP
+#define RT_LWIP_IGMP
 // <bool name="RT_LWIP_UDP" description="Enable UDP protocol" default="true" />
 #define RT_LWIP_UDP
 // <bool name="RT_LWIP_TCP" description="Enable TCP protocol" default="true" />
@@ -148,10 +154,11 @@
 #define RT_LWIP_DNS
 // <integer name="RT_LWIP_PBUF_NUM" description="Maximal number of buffers in the pbuf pool" default="4" />
 #define RT_LWIP_PBUF_NUM	4
+#define RT_LWIP_PBUF_POOL_BUFSIZE 2048
 // <integer name="RT_LWIP_TCP_PCB_NUM" description="Maximal number of simultaneously active TCP connections" default="5" />
 #define RT_LWIP_TCP_PCB_NUM	3
 // <integer name="RT_LWIP_TCP_SND_BUF" description="TCP sender buffer size" default="8192" />
-#define RT_LWIP_TCP_SND_BUF	2048
+#define RT_LWIP_TCP_SND_BUF	4096
 // <integer name="RT_LWIP_TCP_WND" description="TCP receive window" default="8192" />
 #define RT_LWIP_TCP_WND	2048
 // <bool name="RT_LWIP_SNMP" description="Enable SNMP protocol" default="false" />
@@ -159,7 +166,7 @@
 // <bool name="RT_LWIP_DHCP" description="Enable DHCP client to get IP address" default="false" />
 // #define RT_LWIP_DHCP
 // <integer name="RT_LWIP_TCP_SEG_NUM" description="the number of simultaneously queued TCP" default="4" />
-#define RT_LWIP_TCP_SEG_NUM	4
+#define RT_LWIP_TCP_SEG_NUM	40
 // <integer name="RT_LWIP_TCPTHREAD_PRIORITY" description="the thread priority of TCP thread" default="128" />
 #define RT_LWIP_TCPTHREAD_PRIORITY	12
 // <integer name="RT_LWIP_TCPTHREAD_MBOX_SIZE" description="the mail box size of TCP thread to wait for" default="32" />

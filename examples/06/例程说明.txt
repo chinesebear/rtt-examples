@@ -1,0 +1,6 @@
+条件：
+	uart2作为console的接口，波特率为115200，智龙rtconfig.h中配置可用的IP。
+内容：
+	创建线程tcpecho和udpecho，用于测试智龙的网络驱动的TCP和UDP。测试端口为7。根据测试，包长最大为1300个字节。
+目的：
+	该例程可以internet网络实验，进行socket编程。
