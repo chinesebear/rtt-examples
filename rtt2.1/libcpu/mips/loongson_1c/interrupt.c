@@ -171,7 +171,7 @@ static void ls1x_irq_dispatch(int n)
 	intstatus = (ls1c_hw0_icregs+n)->int_isr & (ls1c_hw0_icregs+n)->int_en;
 	if (intstatus) {
 		irq = ls1x_ffs(intstatus);
-		ls1x_do_IRQ((n<<5) + irq - 1);
+		ls1x_do_IRQ((n<<5) + irq);
 		/* ack interrupt */
 		(ls1c_hw0_icregs+n)->int_clr |= (1 << irq);
 	}
@@ -203,7 +203,6 @@ void rt_interrupt_dispatch(void *ptreg)
     cause_im = c0_cause & ST0_IM;
     status_im = c0_status & ST0_IM;
     pending_im = cause_im & status_im;
-	#if 1
     if (pending_im & CAUSEF_IP7)
     {
         rt_hw_timer_handler();
@@ -225,58 +224,6 @@ void rt_interrupt_dispatch(void *ptreg)
 	} else {
 		ls1x_spurious_interrupt();//IP0~1 soft interrupt
 	}
-	
-	#else
-		 if (pending_im & CAUSEF_IP7)
-	    {
-	        rt_hw_timer_handler();
-	    }
-
-	    if (pending_im & CAUSEF_IP2)
-	    {
-	        /* the hardware interrupt */
-	        status = ls1c_hw0_icregs->int_isr;
-	        if (!status)
-	            return;
-
-	        for (irq = MAX_INTR; irq > 0; --irq)
-	        {
-	            if ((status & (1 << irq)))
-	            {
-	                status &= ~(1 << irq);
-
-	                irq_func = irq_handle_table[irq].handler;
-	                param = irq_handle_table[irq].param;
-
-	                /* do interrupt */
-	                irq_func(irq, param);
-
-#ifdef RT_USING_INTERRUPT_INFO
-	                irq_handle_table[irq].counter++;
-#endif /* RT_USING_INTERRUPT_INFO */
-
-	                /* ack interrupt */
-	                ls1c_hw0_icregs->int_clr |= (1 << irq);
-	            }
-	        }
-	    }
-	    else if (pending_im & CAUSEF_IP3)
-	    {
-	        rt_kprintf("%s %d\r\n", __FUNCTION__, __LINE__);
-	    }
-	    else if (pending_im & CAUSEF_IP4)
-	    {
-	        rt_kprintf("%s %d\r\n", __FUNCTION__, __LINE__);
-	    }
-	    else if (pending_im & CAUSEF_IP5)
-	    {
-	        rt_kprintf("%s %d\r\n", __FUNCTION__, __LINE__);
-	    }
-	    else if (pending_im & CAUSEF_IP6)
-	    {
-	        rt_kprintf("%s %d\r\n", __FUNCTION__, __LINE__);
-	    }
-	#endif
 }
 
 /*@}*/

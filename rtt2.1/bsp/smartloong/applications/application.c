@@ -53,7 +53,6 @@ void rt_run_example_thread_entry(void *parameter)
 	//rt_pad_show();
 	for(;;)
 	{
-		#if 1
 		rt_memset(rx_buffer,0,256);
 		rt_memset(tx_buffer,0,256);
 		rx_size = rt_device_read(newdev,0,rx_buffer,256);
@@ -64,9 +63,6 @@ void rt_run_example_thread_entry(void *parameter)
 		tx_size = rx_size;
 		rt_memcpy(tx_buffer,rx_buffer,rx_size);
 		rt_device_write(newdev,0,rx_buffer,tx_size);
-		#endif
-		//rt_device_write(newdev,0,"hello world!",12);
-		//UART_DAT(UART1_BASE)= 'h';
 		rt_thread_delay(100);
 	}
 	rt_kprintf("never get here...\r\n");
@@ -96,7 +92,6 @@ void rt_run_example2_thread_entry(void *parameter)
 	//rt_pad_show();
 	for(;;)
 	{
-		#if 1
 		rt_memset(rx_buffer,0,256);
 		rt_memset(tx_buffer,0,256);
 		rx_size = rt_device_read(newdev,0,rx_buffer,256);
@@ -107,9 +102,6 @@ void rt_run_example2_thread_entry(void *parameter)
 		tx_size = rx_size;
 		rt_memcpy(tx_buffer,rx_buffer,rx_size);
 		rt_device_write(newdev,0,rx_buffer,tx_size);
-		#endif
-		//rt_device_write(newdev,0,"hello world!",12);
-		//UART_DAT(UART1_BASE)= 'h';
 		rt_thread_delay(100);
 	}
 	rt_kprintf("never get here...\r\n");
@@ -241,7 +233,6 @@ int rt_application_init(void)
 		rt_thread_startup(tid);
 	else
 		return -1;
-#if 1
 	/*create example thread*/
 	tid1 = rt_thread_create("example",
 							rt_run_example_thread_entry, RT_NULL,
@@ -259,7 +250,6 @@ int rt_application_init(void)
 		rt_thread_startup(tid2);
 	else
 		return -1;
-#endif
 	/* create key_soft_interrupt thread */
 	sid = rt_thread_create("key",
 							key_soft_interrupt_thread_entry, RT_NULL,
