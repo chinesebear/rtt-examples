@@ -63,7 +63,7 @@ void rt_run_example_thread_entry(void *parameter)
 		tx_size = rx_size;
 		rt_memcpy(tx_buffer,rx_buffer,rx_size);
 		rt_device_write(newdev,0,rx_buffer,tx_size);
-		rt_thread_delay(100);
+		rt_thread_delay(10);
 	}
 	rt_kprintf("never get here...\r\n");
 }
@@ -102,7 +102,7 @@ void rt_run_example2_thread_entry(void *parameter)
 		tx_size = rx_size;
 		rt_memcpy(tx_buffer,rx_buffer,rx_size);
 		rt_device_write(newdev,0,rx_buffer,tx_size);
-		rt_thread_delay(100);
+		rt_thread_delay(10);
 	}
 	rt_kprintf("never get here...\r\n");
 }
