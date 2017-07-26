@@ -12,35 +12,39 @@
  * 2010-06-25          Bernard        first version
  * 2011-08-08          lgnq           modified for Loongson LS1B
  * 2015-07-06          chinesebear    modified for Loongson LS1C
+ * 2017-07-26	chinesebear	NB-IOT communication
  */
 
 #include <rtthread.h>
 #include <components.h>
 #include "uart.h"
 #include "gpio.h"
-#define AT_START					0
-#define AT_NO_SLEEP					1
-#define AT_SET_IEMI					2
-#define AT_SET_APN					3
-#define AT_ACIVIATE_PDP				4
-#define AT_CREATE_TCP				5
-#define AT_SET_PASSTHROUGH			6
-#define AT_PASSTHROUGH_TX			7
-#define AT_PASSTHROUGH_RX			8
-#define AT_CLOSE_SOCKET				9
-#define AT_IDLE						10
-#define AT_NOP						11
+enum AT_NBIOT_UDP_STATE{
+	AT_AUTO_CONN_CFG,
+	AT_CREATE_SOCKET,
+	AT_SEND_MSG,
+	AT_RECV_MSG,
+	AT_CLOSE_SOCKET
+};
+enum AT_NBIOT_CoAP_STATE{
+	AT_QUERY_IEMI,
+	AT_CFG_CDP_SERVER,
+	AT_QUERY_CDP_SERVER,
+	AT_ENABLE_SEND_INDICATE,
+	AT_ENABLE_NEW_INDICATE,
+	AT_SEND_MSG,
+	AT_QUERY_RECV,
+	AT_GET_MSG,
+	AT_QUERY_RECV2
+};
 
 #define AT_DEBUG					0
-#define SEND_TO_GSM					0
-#define RECV_FROM_GSM				1
+#define SEND_TO_NBIOT					0
+#define RECV_FROM_NBIOT				1
 extern rt_device_t uart_dev[];
-rt_uint32_t edge1[2],edge2[2],edge3[2];
-const rt_uint32_t high = 0;
-const rt_uint32_t low = 1;
-rt_uint8_t key_flag = 0;
+
 int atstate = AT_START;
-int linkgsm = SEND_TO_GSM;
+int link_NBIOT = SEND_TO_NBIOT;
 int socketID;
 rt_uint8_t pt_rx_buffer[256];
 rt_uint8_t pt_tx_buffer[256];
@@ -82,30 +86,7 @@ static const rt_uint16_t crctab16[] =
 0XF78F, 0XE606, 0XD49D, 0XC514, 0XB1AB, 0XA022, 0X92B9, 0X8330,
 0X7BC7, 0X6A4E, 0X58D5, 0X495C, 0X3DE3, 0X2C6A, 0X1EF1, 0X0F78,
 };
-//GT02A info feild
-struct gt02a_info_field{
-	rt_uint8_t datetime[6];
-	rt_uint8_t latitude[4];
-	rt_uint8_t longitude[4];
-	rt_uint8_t speed[1];
-	rt_uint8_t direction[2];
-	rt_uint8_t MNC[1];
-	rt_uint8_t cellID[2];
-	rt_uint8_t state[4];
-};
-//GT02A protocol
-struct gt02a_packet{
-	rt_uint8_t start[2];
-	rt_uint8_t length;
-	rt_uint8_t LAC[2];
-	rt_uint8_t terID[8];
-	rt_uint8_t infoSN[2];
-	rt_uint8_t protocolNO[1];
-	struct gt02a_info_field info;
-	rt_uint8_t exit[2];
-}GpsPacket;
 
-static rt_uint32_t infoSnCnt = 1;
 #define  atCmdGapTime  		300 //tick
 #define  atUart3RxTimeOut   400 //tick
 
@@ -232,54 +213,6 @@ static rt_uint16_t AtGetCrc16(const rt_uint8_t* pData, int nLength)
 }
 return ~fcs;
 }
-
-static int AtReponseDataCompare(rt_uint8_t* rxdata, int rxsize,const char* comparedta,int * pos)
-{
-	int i =0;
-	int tpos = 0;
-	int cmpStrSize = 0,flagCmp = 0;
-	if(rxsize == 0)
-	{
-		rt_kprintf("compare rxsize=%d\r\n",rxsize);
-		return 0;
-	}
-	while(i<rxsize)
-	{
-
-		if(rxdata[i] != '\r' && rxdata[i] != '\n')
-		{
-			*pos = i;
-			tpos = i;
-			break;
-		}
-		i++;
-	}
-	i =0;
-	while(i<rxsize )
-	{
-		if(rxdata[i] == '\r' || rxdata[i] == '\n')
-		{
-			rxdata[i] = '\0';
-		}
-		i++;
-	}
-	cmpStrSize =strlen(comparedta);
-	#if AT_DEBUG
-	DumpData("DataCompare",(rxdata+tpos),(rxsize-tpos));
-	#endif
-	for(i = 0; i<(rxsize-tpos) ;i++)
-	{
-		if(rt_memcmp(comparedta,(rxdata+tpos),cmpStrSize)== 0)
-		{
-			flagCmp  = 1;
-			break;
-		}
-	}
-	if(flagCmp)
-		return 0;
-	else
-		return tpos;// response data stata postion
-}
 static int AtStrCompare(const void * recvBuf,const int recvSize,const void* cmpStr)
 {
 	int i,iRet =0;
@@ -301,48 +234,7 @@ static int AtStrCompare(const void * recvBuf,const int recvSize,const void* cmpS
 	}
 	return iRet;
 }
-static int AtReturnSocketId(const rt_uint8_t * recvBuf,const int recvSize)
-{
-	int i,socketId = -1,offset = 0;
-	const rt_uint8_t* cmpStr ="+ETL: ";
-	int cmpStrSize = strlen(cmpStr);
-	for(i = 0; i< recvSize;i++)
-	{
-		if(rt_memcmp(recvBuf+i,cmpStr,cmpStrSize)==0)
-		{
-			offset = i;
-			break;
-		}
-	}
-	socketId = recvBuf[offset+6] -'0';
-	return socketId;
-}
-
-static void AtCombineGpsData(struct gt02a_packet * packet,rt_uint8_t* txbuffer)
-{
-	if(packet == NULL || txbuffer == NULL)return ;
-	const char* ptDat = "686825266A03586880000001580001100A0C1E0A2E05027AC8390C4657C5000156001DF1000000060D0A";
-	AtStr2Hex(ptDat,txbuffer);
-	#if 0
-	rt_memset(txbuffer,0x68,2);//start
-	rt_memset(txbuffer+2,0x25,1);//length 37
-	rt_memcpy(txbuffer+3,packet->LAC,2);
-	rt_memcpy(txbuffer+5,packet->terID,8);
-	rt_memcpy(txbuffer+13,packet->infoSN,2);
-	rt_memcpy(txbuffer+15,packet->protocolNO,1);
-	rt_memcpy(txbuffer+16,packet->info.datetime,6);
-	rt_memcpy(txbuffer+22,packet->info.latitude,4);
-	rt_memcpy(txbuffer+26,packet->info.longitude,4);
-	rt_memcpy(txbuffer+30,packet->info.speed,1);
-	rt_memcpy(txbuffer+31,packet->info.direction,2);
-	rt_memcpy(txbuffer+33,packet->info.MNC,1);
-	rt_memcpy(txbuffer+34,packet->info.cellID,2);
-	rt_memcpy(txbuffer+36,packet->info.state,4);
-	rt_memset(txbuffer+40,0x0D,1);//exit
-	rt_memset(txbuffer+41,0x0A,1);
-	#endif
-}
-static rt_size_t AtUart3Read(rt_device_t dev,void *buffer,rt_size_t   size)
+ rt_size_t AtUart3Read(rt_device_t dev,void *buffer,rt_size_t   size)
 {
 	int rx_size = 0,rx_size1 =0;
 	int i=0,j=0,flag = 0;
@@ -406,7 +298,63 @@ static rt_size_t AtUart3ReadTimeOut(rt_device_t dev,void *buffer,rt_size_t   siz
 	DumpData("AtUart3Rx",buffer,rx_size);
 	return rx_size;
 }
+static void nbiot_atcmd_NCONFIG(rt_device_t newdev)
+{
+	//AT+NCONFIG=AUTOCONNECT,TRUE
+}
 
+static void nbiot_atcmd_NSOCR(rt_device_t newdev)
+{
+	char* ATcmd;
+	int rx_size,iRet,infopos;
+	rt_uint8_t rx_buffer[256];
+	rt_memset(rx_buffer,0x00,256);
+	switch(link_NBIOT)
+	{
+		case SEND_TO_NBIOT:
+			rt_kprintf("[AT_AUTO_CONN_CFG] enter\r\n");
+			ATcmd = "AT+NSOCR= DGRAM,17,5683,1\n";
+			DumpData("ATcmd",ATcmd,strlen(ATcmd));
+			rt_device_write(newdev,0,ATcmd,strlen(ATcmd));
+			break;
+		case RECV_FROM_NBIOT:
+			rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
+			iRet = AtCheckRecvData(rx_buffer,rx_size,"OK",&infopos);
+			if(iRet == 0 && rx_size)
+			{
+				atstate = AT_CREATE_SOCKET;
+				rt_kprintf("[AT_AUTO_CONN_CFG] OK\r\n");
+				rt_thread_delay(atCmdGapTime);
+				
+			}
+			else
+			{
+				rt_kprintf("[AT_AUTO_CONN_CFG](error)\r\n");
+			}
+			rt_kprintf("[AT_AUTO_CONN_CFG] exit\r\n");
+			break;
+		default:
+			rt_kprintf("[AT_AUTO_CONN_CFG] link_NBIOT err state\r\n");
+			break;
+	}
+}
+static void nbiot_atcmd_NSOST(rt_device_t newdev)
+{
+
+}
+static void nbiot_atcmd_NSONMI(rt_device_t newdev)
+{
+
+}
+static void nbiot_atcmd_NSORF(rt_device_t newdev)
+{
+
+}
+
+static void nbiot_atcmd_NSOCL(rt_device_t newdev)
+{
+
+}
 
 void rt_init_thread_entry(void *parameter)
 {
@@ -437,35 +385,6 @@ void rt_run_example_thread_entry(void *parameter)
 	//rt_pad_show();
 	for(;;)
 	{
-		GpsPacket.length = 0x25;//37
-		GpsPacket.LAC[0] = 0xFF;
-		GpsPacket.LAC[1] = 0xFE;
-		rt_memcpy(GpsPacket.terID,"\x01\x23\x45\x67\x89\x01\x23\x45",8);
-		/*
-		GpsPacket.terID[0] = 0x01;
-		GpsPacket.terID[1] = 0x23;
-		GpsPacket.terID[2] = 0x45;
-		GpsPacket.terID[3] = 0x67;
-		GpsPacket.terID[4] = 0x89;
-		GpsPacket.terID[5] = 0x01;
-		GpsPacket.terID[6] = 0x23;
-		GpsPacket.terID[7] = 0x45;
-		*/
-		GpsPacket.infoSN[0] = infoSnCnt&0xFF;
-		GpsPacket.infoSN[1] = ((infoSnCnt&0xFF00)>>8);
-		rt_memcpy(GpsPacket.info.datetime,"\x0A\x03\x17\x0F\x32\x17",6);
-		rt_memcpy(GpsPacket.info.latitude,"\x02\x6B\x3F\x3E",4);
-		rt_memcpy(GpsPacket.info.longitude,"\x09\xA7\xEC\x80",4);
-		rt_memset(GpsPacket.info.speed,0x10,1);
-		rt_memcpy(GpsPacket.info.direction,"\x15\x4c",2);
-		rt_memset(GpsPacket.info.MNC,0x00,1);
-		rt_memcpy(GpsPacket.info.cellID,"\x00\x00\x00\x01",4);
-		rt_memcpy(GpsPacket.info.state,"\x00\x00\x00\x07",4);
-		if(pt_tx_size == 0)
-		{
-			AtCombineGpsData(&GpsPacket,pt_tx_buffer);
-			pt_tx_size = 42;
-		}
 		rt_thread_delay(100);
 	}
 	rt_kprintf("never get here...\r\n");
@@ -500,273 +419,22 @@ void rt_run_example2_thread_entry(void *parameter)
 		rt_memset(tx_buffer,0,256);
 		switch(atstate)
 		{
-			case AT_START:
-				rx_size = rt_device_read(newdev,0,rx_buffer,256);
-				iRet = AtStrCompare(rx_buffer,rx_size,"+EUSIM: 1");
-				if(iRet)
-				{
-					atstate = AT_NO_SLEEP;
-					rt_kprintf("[AT_START] start gsm module\r\n");
-				}
+			case AT_AUTO_CONN_CFG:
+				nbiot_atcmd_NCONFIG(newdev);
 				break;
-			case AT_NO_SLEEP:
-				if(linkgsm == SEND_TO_GSM)
-				{
-					rt_kprintf("[AT_NO_SLEEP] enter\r\n");
-					ATcmd = "AT+ESLP=0\n";
-					DumpData("ATcmd",ATcmd,strlen(ATcmd));
-					rt_device_write(newdev,0,ATcmd,strlen(ATcmd));
-					linkgsm = RECV_FROM_GSM;
-				}
-				else if(linkgsm == RECV_FROM_GSM)
-				{
-					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
-					iRet = AtReponseDataCompare(rx_buffer,rx_size,"OK",&pos);
-					if(iRet == 0 && rx_size)
-					{
-						atstate = AT_SET_IEMI;
-						rt_kprintf("[AT_NO_SLEEP] OK\r\n");
-						rt_thread_delay(atCmdGapTime);
-						
-					}
-					else
-					{
-						rt_kprintf("[AT_NO_SLEEP](error)\r\n");
-					}
-					rt_kprintf("[AT_NO_SLEEP] exit\r\n");
-					linkgsm = SEND_TO_GSM;
-				}
-				else
-				{
-					rt_kprintf("[AT_NO_SLEEP] linkgsm state err\r\n");
-				}
+			case AT_CREATE_SOCKET:
+				nbiot_atcmd_NSOCR(newdev);
 				break;
-			case AT_SET_IEMI:
-				if(linkgsm == SEND_TO_GSM)
-				{
-					rt_kprintf("[AT_SET_IEMI] enter\r\n");
-					ATcmd = "AT+EGMR=1,7,\"868120114072751\"\n";
-					DumpData("ATcmd",ATcmd,strlen(ATcmd));
-					rt_device_write(newdev,0,ATcmd,strlen(ATcmd));
-					linkgsm = RECV_FROM_GSM;
-				}
-				else if(linkgsm == RECV_FROM_GSM)
-				{
-					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
-					iRet = AtReponseDataCompare(rx_buffer,rx_size,"OK",&pos);
-					if(iRet == 0 && rx_size)
-					{
-						atstate = AT_SET_APN;
-						rt_kprintf("[AT_SET_IEMI] OK\r\n");
-						rt_thread_delay(atCmdGapTime);
-						
-					}
-					else
-					{
-						rt_kprintf("[AT_SET_IEMI] (error)\r\n");
-					}
-					rt_kprintf("[AT_SET_IEMI] exit\r\n");
-					linkgsm = SEND_TO_GSM;
-				}
-				else
-				{
-					rt_kprintf("[AT_SET_IEMI] linkgsm state err\r\n");
-				}
+			case AT_SEND_MSG:
+				nbiot_atcmd_NSOST(newdev);
 				break;
-			case AT_SET_APN:
-				if(linkgsm == SEND_TO_GSM)
-				{
-					rt_kprintf("[AT_SET_APN] enter\r\n");
-					ATcmd = "AT+EGDCONT=0,\"IP\",\"CMNET\"\n";
-					DumpData("ATcmd",ATcmd,strlen(ATcmd));
-					rt_device_write(newdev,0,ATcmd,strlen(ATcmd));
-					linkgsm = RECV_FROM_GSM;
-				}
-				else if(linkgsm == RECV_FROM_GSM)
-				{
-					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
-					iRet = AtReponseDataCompare(rx_buffer,rx_size,"OK",&pos);
-					if(iRet == 0 && rx_size)
-					{
-						atstate = AT_ACIVIATE_PDP;
-						rt_kprintf("[AT_SET_APN] OK\r\n");
-						rt_thread_delay(atCmdGapTime);
-					}
-					else
-					{
-						rt_kprintf("[AT_SET_APN] (error)\r\n");
-					}
-					rt_kprintf("[AT_SET_APN] exit\r\n");
-					linkgsm = SEND_TO_GSM;
-				}
-				else
-				{
-					rt_kprintf("[AT_SET_APN] linkgsm state err\r\n");
-				}
-				break;
-			case AT_ACIVIATE_PDP:
-				if(linkgsm == SEND_TO_GSM)
-				{
-					rt_kprintf("[AT_ACIVIATE_PDP] enter\r\n");
-					ATcmd = "AT+ETCPIP=1,0\n";
-					DumpData("ATcmd",ATcmd,strlen(ATcmd));
-					rt_device_write(newdev,0,ATcmd,strlen(ATcmd));
-					linkgsm = RECV_FROM_GSM;
-				}
-				else if(linkgsm == RECV_FROM_GSM)
-				{
-					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
-					iRet = AtReponseDataCompare(rx_buffer,rx_size,"OK",&pos);
-					if(iRet == 0 && rx_size)
-					{
-						atstate = AT_CREATE_TCP;
-						rt_kprintf("[AT_ACIVIATE_PDP] OK\r\n");
-						rt_thread_delay(atCmdGapTime);
-					}
-					else
-					{
-						rt_kprintf("[AT_ACIVIATE_PDP](error)\r\n");
-					}
-					rt_kprintf("[AT_ACIVIATE_PDP] exit\r\n");
-					linkgsm = SEND_TO_GSM;
-				}
-				else
-				{
-					rt_kprintf("[AT_ACIVIATE_PDP] linkgsm state err\r\n");
-				}
-				break;
-			case AT_CREATE_TCP:
-				if(linkgsm == SEND_TO_GSM)
-				{
-					rt_kprintf("[AT_CREATE_TCP] enter\r\n");
-					ATcmd = "AT+ETL=1,0,0,\"114.215.111.138\",5000\n";
-					DumpData("ATcmd",ATcmd,strlen(ATcmd));
-					rt_device_write(newdev,0,ATcmd,strlen(ATcmd));
-					linkgsm = RECV_FROM_GSM;
-				}
-				else if(linkgsm == RECV_FROM_GSM)
-				{
-					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
-					iRet = AtReponseDataCompare(rx_buffer,rx_size,"OK",&pos);
-					if(iRet == 0 && rx_size)
-					{
-						atstate = AT_SET_PASSTHROUGH;
-						socketID = AtReturnSocketId(rx_buffer,rx_size);
-						rt_kprintf("[AT_CREATE_TCP] socketID=%d\r\n",socketID);
-						rt_thread_delay(atCmdGapTime);
-					}
-					else
-					{
-						rt_kprintf("[AT_CREATE_TCP] (ERROR)\r\n");
-					}
-					rt_kprintf("[AT_CREATE_TCP] exit\r\n");
-					linkgsm = SEND_TO_GSM;
-				}
-				else
-				{
-					rt_kprintf("[AT_CREATE_TCP] linkgsm state err\r\n");
-				}
-				
-				break;
-			case AT_SET_PASSTHROUGH:
-				if(linkgsm == SEND_TO_GSM)
-				{
-					rt_kprintf("[AT_SET_PASSTHROUGH] enter\r\n");
-					ATcmd = "AT+ETLTS=";
-					rt_snprintf(tx_buffer,strlen(ATcmd)+2,"%s%d",ATcmd,socketID);
-					tx_buffer[10] = 0x0A;
-					DumpData("ATcmd",tx_buffer,strlen(tx_buffer));
-					rt_device_write(newdev,0,tx_buffer,strlen(tx_buffer));
-					linkgsm = RECV_FROM_GSM;
-				}
-				else if(linkgsm == RECV_FROM_GSM)
-				{
-					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,4000);
-					//iRet = AtReponseDataCompare(rx_buffer,rx_size,"ERROR",&pos);
-					{
-						atstate = AT_PASSTHROUGH_TX;
-						rt_kprintf("[AT_SET_PASSTHROUGH] OK\r\n");
-						rt_thread_delay(atCmdGapTime);
-					}
-					rt_kprintf("[AT_SET_PASSTHROUGH] exit\r\n");
-					linkgsm = SEND_TO_GSM;
-				}
-				else
-				{
-					rt_kprintf("[AT_SET_PASSTHROUGH] linkgsm state err\r\n");
-				}
-				
-				break;
-			case AT_PASSTHROUGH_TX:
-				rt_kprintf("[AT_PASSTHROUGH_TX] enter\r\n");
-				rt_device_write(newdev,0,pt_tx_buffer,pt_tx_size);
-				atstate = AT_PASSTHROUGH_RX;
-				DumpData("pt_data_tx",pt_tx_buffer,pt_tx_size);
-				infoSnCnt++;
-				pt_tx_size = 0;
-				rt_memset(pt_tx_buffer,0,256);
-				rt_kprintf("[AT_PASSTHROUGH_TX] exit\r\n");
-				break;
-			case AT_PASSTHROUGH_RX:
-				rt_kprintf("[AT_PASSTHROUGH_RX] enter\r\n");
-				rt_thread_delay(100);
-				rt_memset(pt_rx_buffer,0,256);
-				pt_rx_size = rt_device_read(newdev,0,pt_rx_buffer,256);
-				if(pt_rx_size)
-				{
-					atstate = AT_IDLE;
-					DumpData("pt_data_rx",pt_rx_buffer,pt_rx_size);
-				}
-				else
-				{
-					atstate = AT_PASSTHROUGH_RX;
-					rt_kprintf("[AT_PASSTHROUGH_RX] receive no data\r\n");
-				}
-				rt_kprintf("[AT_PASSTHROUGH_RX] exit\r\n");
+			case AT_RECV_MSG:
+				nbiot_atcmd_NSONMI(newdev);
+				nbiot_atcmd_NSORF(newdev);
 				break;
 			case AT_CLOSE_SOCKET:
-				if(linkgsm == SEND_TO_GSM)
-				{
-					rt_kprintf("[AT_CLOSE_SOCKET] enter\r\n");
-					ATcmd = "AT+ETL=0,";
-					rt_memset(tx_buffer,0,256);
-					rt_snprintf(tx_buffer,strlen(ATcmd)+1,"%s%d\n",ATcmd,socketID);
-					DumpData("ATcmd",ATcmd,strlen(ATcmd));
-					rt_device_write(newdev,0,tx_buffer,strlen(ATcmd)+1);
-					linkgsm = RECV_FROM_GSM;
-				}
-				else if(linkgsm == RECV_FROM_GSM)
-				{
-					rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
-					iRet = AtReponseDataCompare(rx_buffer,rx_size,"OK",&pos);
-					if(iRet == 0 && rx_size)
-					{
-						atstate = AT_NOP;
-						rt_kprintf("[AT_CLOSE_SOCKET] OK\r\n");
-						rt_thread_delay(300);
-					}
-					else
-					{
-						rt_kprintf("[AT_CLOSE_SOCKET](error)\r\n");
-					}
-					rt_kprintf("[AT_CLOSE_SOCKET] exit\r\n");
-					linkgsm = SEND_TO_GSM;
-				}
-				else
-				{
-					rt_kprintf("[AT_CLOSE_SOCKET] linkgsm state err\r\n");
-				}
+				nbiot_atcmd_NSOCL(newdev);
 				break;
-			case AT_IDLE:
-				rt_kprintf("[AT_IDLE] enter\r\n");
-				if(pt_tx_size) 
-				{
-					atstate = AT_PASSTHROUGH_TX;
-					linkgsm = SEND_TO_GSM;
-				}
-				rt_kprintf("[AT_IDLE] exit\r\n");
-				break;
-			case AT_NOP:
 			default:
 				rt_kprintf(".");
 				rt_thread_delay(100);
