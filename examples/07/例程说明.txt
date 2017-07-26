@@ -1,0 +1,12 @@
+条件：
+	uart2作为console的接口，uart3与移远的BC95模块通信接口，波特率为115200。
+	BC95-B5版本为：中国电信
+	BC95-B8版本为：中国移动/中国联通
+	核心芯片是来自华为海思的boudica120。
+内容：
+	创建线程2。在线程中，处理来自UART3的数据即BC95模块的AT协议数据。
+	Attach Network、Send/Receive/Read CoAP Messages、Send/Receive/Read UDP Messages
+	通过AT指令配置BC95模块，实现数据透传。
+	代码是通过状态机方式分部配置。
+目的：
+	通过AT指令配置BC95模块，实现数据透传。
