@@ -19,6 +19,24 @@
 #include <components.h>
 #include "uart.h"
 #include "gpio.h"
+
+
+#define AT_DEBUG					0
+#define SEND_TO_NBIOT				0
+#define RECV_FROM_NBIOT				1
+
+#define  atCmdGapTime  		300 //tick
+#define  atUart3RxTimeOut   400 //tick
+
+#define atNbiotCreateSocket_type				"DGRAM"
+#define atNbiotCreateSocket_protocol			"17"
+#define atNbiotCreateSocket_listen_port			"5683"
+#define atNbiotCreateSocket_receive_control		"1"
+
+#define atNbiotTxBufferSize				256
+#define atNbiotRxBufferSize				512
+
+
 enum AT_NBIOT_UDP_STATE{
 	AT_AUTO_CONN_CFG,
 	AT_CREATE_SOCKET,
@@ -38,16 +56,11 @@ enum AT_NBIOT_CoAP_STATE{
 	AT_QUERY_RECV2
 };
 
-#define AT_DEBUG					0
-#define SEND_TO_NBIOT					0
-#define RECV_FROM_NBIOT				1
-extern rt_device_t uart_dev[];
-
-int atstate = AT_START;
+int atstate = AT_AUTO_CONN_CFG;
 int link_NBIOT = SEND_TO_NBIOT;
 int socketID;
-rt_uint8_t pt_rx_buffer[256];
-rt_uint8_t pt_tx_buffer[256];
+rt_uint8_t pt_rx_buffer[atNbiotRxBufferSize];
+rt_uint8_t pt_tx_buffer[atNbiotTxBufferSize];
 int pt_tx_size = 0;
 int pt_rx_size = 0;
 
@@ -86,9 +99,9 @@ static const rt_uint16_t crctab16[] =
 0XF78F, 0XE606, 0XD49D, 0XC514, 0XB1AB, 0XA022, 0X92B9, 0X8330,
 0X7BC7, 0X6A4E, 0X58D5, 0X495C, 0X3DE3, 0X2C6A, 0X1EF1, 0X0F78,
 };
+extern rt_device_t uart_dev[];
 
-#define  atCmdGapTime  		300 //tick
-#define  atUart3RxTimeOut   400 //tick
+
 
 
 static void DumpData(const rt_uint8_t *pcStr,rt_uint8_t *pucBuf,rt_uint32_t usLen)
@@ -300,29 +313,28 @@ static rt_size_t AtUart3ReadTimeOut(rt_device_t dev,void *buffer,rt_size_t   siz
 }
 static void nbiot_atcmd_NCONFIG(rt_device_t newdev)
 {
-	//AT+NCONFIG=AUTOCONNECT,TRUE
-}
-
-static void nbiot_atcmd_NSOCR(rt_device_t newdev)
-{
 	char* ATcmd;
 	int rx_size,iRet,infopos;
-	rt_uint8_t rx_buffer[256];
-	rt_memset(rx_buffer,0x00,256);
+	rt_uint8_t rx_buffer[atNbiotRxBufferSize];
+	rt_uint8_t tx_buffer[atNbiotTxBufferSize];
+	rt_memset(rx_buffer,0x00,atNbiotRxBufferSize);
+	rt_memset(tx_buffer,0x00,atNbiotTxBufferSize);
 	switch(link_NBIOT)
 	{
 		case SEND_TO_NBIOT:
 			rt_kprintf("[AT_AUTO_CONN_CFG] enter\r\n");
-			ATcmd = "AT+NSOCR= DGRAM,17,5683,1\n";
+			ATcmd = "AT+NCONFIG=AUTOCONNECT,TRUE\n";
 			DumpData("ATcmd",ATcmd,strlen(ATcmd));
 			rt_device_write(newdev,0,ATcmd,strlen(ATcmd));
+			link_NBIOT = RECV_FROM_NBIOT;
 			break;
 		case RECV_FROM_NBIOT:
 			rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
 			iRet = AtCheckRecvData(rx_buffer,rx_size,"OK",&infopos);
 			if(iRet == 0 && rx_size)
 			{
-				atstate = AT_CREATE_SOCKET;
+				atstate = SEND_TO_NBIOT;
+				link_NBIOT = RECV_FROM_NBIOT;
 				rt_kprintf("[AT_AUTO_CONN_CFG] OK\r\n");
 				rt_thread_delay(atCmdGapTime);
 				
@@ -335,6 +347,47 @@ static void nbiot_atcmd_NSOCR(rt_device_t newdev)
 			break;
 		default:
 			rt_kprintf("[AT_AUTO_CONN_CFG] link_NBIOT err state\r\n");
+			break;
+}
+}
+static void nbiot_atcmd_NSOCR(rt_device_t newdev)
+{
+	char* ATcmd;
+	int rx_size,iRet,infopos;
+	rt_uint8_t rx_buffer[atNbiotRxBufferSize];
+	rt_uint8_t tx_buffer[atNbiotTxBufferSize];
+	rt_memset(rx_buffer,0x00,atNbiotRxBufferSize);
+	rt_memset(tx_buffer,0x00,atNbiotTxBufferSize);
+	switch(link_NBIOT)
+	{
+		case SEND_TO_NBIOT:
+			rt_kprintf("[AT_CREATE_SOCKET] enter\r\n");
+			rt_sprintf(tx_buffer,"AT+NSOCR= %s,%s,%s,%s\n",
+				atNbiotCreateSocket_type,atNbiotCreateSocket_protocol,
+				atNbiotCreateSocket_listen_port,atNbiotCreateSocket_receive_control);
+			DumpData("ATcmd",tx_buffer,strlen(tx_buffer));
+			rt_device_write(newdev,0,tx_buffer,strlen(tx_buffer));
+			link_NBIOT = RECV_FROM_NBIOT;
+			break;
+		case RECV_FROM_NBIOT:
+			rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
+			iRet = AtCheckRecvData(rx_buffer,rx_size,"OK",&infopos);
+			if(iRet == 0 && rx_size)
+			{
+				atstate = SEND_TO_NBIOT;
+				link_NBIOT = RECV_FROM_NBIOT;
+				rt_kprintf("[AT_CREATE_SOCKET] OK\r\n");
+				rt_thread_delay(atCmdGapTime);
+				
+			}
+			else
+			{
+				rt_kprintf("[AT_CREATE_SOCKET](error)\r\n");
+			}
+			rt_kprintf("[AT_CREATE_SOCKET] exit\r\n");
+			break;
+		default:
+			rt_kprintf("[AT_CREATE_SOCKET] link_NBIOT err state\r\n");
 			break;
 	}
 }
