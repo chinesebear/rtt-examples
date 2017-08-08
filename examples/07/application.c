@@ -25,7 +25,7 @@
 #define SEND_TO_NBIOT				0
 #define RECV_FROM_NBIOT				1
 
-#define  atCmdGapTime  		300 //tick
+#define  atCmdGapTime  		100 //tick
 #define  atUart3RxTimeOut   400 //tick
 
 #define atNbiotCreateSocket_type				"DGRAM"
@@ -33,8 +33,17 @@
 #define atNbiotCreateSocket_listen_port			"5683"
 #define atNbiotCreateSocket_receive_control		"1"
 
+#define atNbiotSendMessage_ip		"118.190.93.84"
+#define atNbiotSendMessage_port		"2317"
+
 #define atNbiotTxBufferSize				256
 #define atNbiotRxBufferSize				512
+
+#define AT_OK					0
+#define AT_FAIL					(-1)
+
+#define AT_RESPNOSE_OK			AT_OK
+#define AT_RESPNOSE_ERROR		AT_FAIL
 
 
 enum AT_NBIOT_UDP_STATE{
@@ -42,7 +51,9 @@ enum AT_NBIOT_UDP_STATE{
 	AT_CREATE_SOCKET,
 	AT_SEND_MSG,
 	AT_RECV_MSG,
-	AT_CLOSE_SOCKET
+	AT_READ_MSG,
+	AT_CLOSE_SOCKET,
+	AT_IDLE
 };
 enum AT_NBIOT_CoAP_STATE{
 	AT_QUERY_IEMI,
@@ -55,7 +66,10 @@ enum AT_NBIOT_CoAP_STATE{
 	AT_GET_MSG,
 	AT_QUERY_RECV2
 };
-
+typedef struct socket_message{
+	int socketid;
+	int msglen;
+}socket_msg;
 int atstate = AT_AUTO_CONN_CFG;
 int link_NBIOT = SEND_TO_NBIOT;
 int socketID;
@@ -63,6 +77,7 @@ rt_uint8_t pt_rx_buffer[atNbiotRxBufferSize];
 rt_uint8_t pt_tx_buffer[atNbiotTxBufferSize];
 int pt_tx_size = 0;
 int pt_rx_size = 0;
+socket_msg smsg;
 
 static const rt_uint16_t crctab16[] =
 {
@@ -247,6 +262,38 @@ static int AtStrCompare(const void * recvBuf,const int recvSize,const void* cmpS
 	}
 	return iRet;
 }
+static int AtCheckRecvData(const void * recvBuf,const int recvSize)
+{
+	if( AtStrCompare(recvBuf,recvSize,"OK"))
+		return AT_RESPNOSE_OK;
+	else
+		return AT_RESPNOSE_ERROR;
+
+}
+static int AtGetSocketId(const void * recvBuf,const int recvSize)
+{
+	int i;
+	rt_uint8_t ch;
+	int socketid = AT_FAIL;
+	if(AtCheckRecvData(recvBuf,recvSize) == AT_RESPNOSE_OK)
+	{
+		for(i=0;i<recvSize;i++)
+		{
+			ch = *(recvBuf+i);
+			if('0' <= ch && ch =< '9')
+			{
+				socketid = socketid*10 + (ch-'0');
+			}
+		}
+		rt_kprintf("socket ID = %d!\r\n",socketid);
+		return socketid;
+	}
+	else
+	{
+		rt_kprintf("reponse msg is NOK!\r\n");
+		return AT_FAIL;
+	}
+}
  rt_size_t AtUart3Read(rt_device_t dev,void *buffer,rt_size_t   size)
 {
 	int rx_size = 0,rx_size1 =0;
@@ -330,11 +377,11 @@ static void nbiot_atcmd_NCONFIG(rt_device_t newdev)
 			break;
 		case RECV_FROM_NBIOT:
 			rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
-			iRet = AtCheckRecvData(rx_buffer,rx_size,"OK",&infopos);
-			if(iRet == 0 && rx_size)
+			iRet = AtCheckRecvData(rx_buffer,rx_size);
+			if(iRet == AT_RESPNOSE_OK)
 			{
-				atstate = SEND_TO_NBIOT;
-				link_NBIOT = RECV_FROM_NBIOT;
+				atstate = AT_CREATE_SOCKET;
+				link_NBIOT = SEND_TO_NBIOT;
 				rt_kprintf("[AT_AUTO_CONN_CFG] OK\r\n");
 				rt_thread_delay(atCmdGapTime);
 				
@@ -352,6 +399,10 @@ static void nbiot_atcmd_NCONFIG(rt_device_t newdev)
 }
 static void nbiot_atcmd_NSOCR(rt_device_t newdev)
 {
+	/*
+		Create a socket
+		AT+NSOCR= DGRAM,17,5683,1
+	*/
 	char* ATcmd;
 	int rx_size,iRet,infopos;
 	rt_uint8_t rx_buffer[atNbiotRxBufferSize];
@@ -362,7 +413,7 @@ static void nbiot_atcmd_NSOCR(rt_device_t newdev)
 	{
 		case SEND_TO_NBIOT:
 			rt_kprintf("[AT_CREATE_SOCKET] enter\r\n");
-			rt_sprintf(tx_buffer,"AT+NSOCR= %s,%s,%s,%s\n",
+			rt_sprintf(tx_buffer,"AT+NSOCR=%s,%s,%s,%s\n",
 				atNbiotCreateSocket_type,atNbiotCreateSocket_protocol,
 				atNbiotCreateSocket_listen_port,atNbiotCreateSocket_receive_control);
 			DumpData("ATcmd",tx_buffer,strlen(tx_buffer));
@@ -371,14 +422,14 @@ static void nbiot_atcmd_NSOCR(rt_device_t newdev)
 			break;
 		case RECV_FROM_NBIOT:
 			rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
-			iRet = AtCheckRecvData(rx_buffer,rx_size,"OK",&infopos);
-			if(iRet == 0 && rx_size)
+			iRet = AtCheckRecvData(rx_buffer,rx_size);
+			if(iRet == AT_RESPNOSE_OK)
 			{
 				atstate = SEND_TO_NBIOT;
-				link_NBIOT = RECV_FROM_NBIOT;
+				link_NBIOT = SEND_TO_NBIOT;
+				socketID = AtGetSocketId(rx_buffer,rx_size);
 				rt_kprintf("[AT_CREATE_SOCKET] OK\r\n");
 				rt_thread_delay(atCmdGapTime);
-				
 			}
 			else
 			{
@@ -393,20 +444,199 @@ static void nbiot_atcmd_NSOCR(rt_device_t newdev)
 }
 static void nbiot_atcmd_NSOST(rt_device_t newdev)
 {
-
+	/*
+		Send a message
+		AT+NSOST=0,192.53.100.53,5683,25,400241C7B17401724D0265703D323031363038323331363438
+		<socket> Socket number returned by AT+NSOCR
+		<remote_addr> IPv4 A dot notation IP address
+		<remote_port> A number in the range 0-65535. This is the remote port on which messages will be received
+		<length> Decimal length of data to be sent
+		<data> Data received in hex string format, or quoted string format
+	*/
+	char* ATcmd;
+	int rx_size,iRet,infopos;
+	rt_uint8_t rx_buffer[atNbiotRxBufferSize];
+	rt_uint8_t tx_buffer[atNbiotTxBufferSize];
+	rt_memset(rx_buffer,0x00,atNbiotRxBufferSize);
+	rt_memset(tx_buffer,0x00,atNbiotTxBufferSize);
+	switch(link_NBIOT)
+	{
+		case SEND_TO_NBIOT:
+			rt_kprintf("[AT_SEND_MSG] enter\r\n");
+			rt_sprintf(tx_buffer,"AT+NSOST=%d,%s,%s,%d,%s\n",
+				socketID,atNbiotSendMessage_ip,
+				atNbiotSendMessage_port,10,"hello NB!!!!!!");
+			DumpData("ATcmd",tx_buffer,strlen(tx_buffer));
+			rt_device_write(newdev,0,tx_buffer,strlen(tx_buffer));
+			link_NBIOT = RECV_FROM_NBIOT;
+			break;
+		case RECV_FROM_NBIOT:
+			rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
+			iRet = AtCheckRecvData(rx_buffer,rx_size);
+			if(iRet == AT_RESPNOSE_OK)
+			{
+				atstate = AT_RECV_MSG;
+				link_NBIOT = SEND_TO_NBIOT;
+				rt_kprintf("[AT_SEND_MSG] OK\r\n");
+				rt_thread_delay(atCmdGapTime);
+				
+			}
+			else
+			{
+				rt_kprintf("[AT_SEND_MSG](error)\r\n");
+			}
+			rt_kprintf("[AT_SEND_MSG] exit\r\n");
+			break;
+		default:
+			rt_kprintf("[AT_SEND_MSG] link_NBIOT err state\r\n");
+			break;
+	}
 }
 static void nbiot_atcmd_NSONMI(rt_device_t newdev)
 {
+	/*
+		Receive the message
+		+NSONMI:0,4
+	*/
+	int rx_size,i,startpos =0,socketid=0,slen=0;
+	rt_uint8_t rx_buffer[atNbiotRxBufferSize];
+	rt_uint8_t tx_buffer[atNbiotTxBufferSize];
+	rt_uint8_t ch;
+	rt_memset(rx_buffer,0x00,atNbiotRxBufferSize);
+	rt_memset(tx_buffer,0x00,atNbiotTxBufferSize);
+	rt_kprintf("[AT_RECV_MSG] enter\r\n");
+	rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,1000);
+	if(rx_size)
+	{
+		for(i=0;i<rx_size;i++)
+		{
 
+			if(rt_memcmp((rx_buffer+i),"+NSONMI:",8)==0)
+			{
+				startpos = i+8;
+				break;
+			}
+
+		}
+		if(startpos == 0 )return ;
+		for(i=startpos;i<rx_size;i++)
+		{
+			ch= *(rx_buffer + i);
+			if('0' <= ch && ch =< '9')
+			{
+				socketid = socketid*10+(ch -'0');
+			}
+			if(ch == ',')
+			{
+				startpos = i+1;
+				break;
+			}
+		}
+		for(i=startpos;i<rx_size;i++)
+		{
+			ch= *(rx_buffer + i);
+			if('0' <= ch && ch =< '9')
+			{
+				slen = slen*10+(ch -'0');
+			}
+		}
+		rt_kprintf("socket ID = %d,message len = !\r\n",socketid,slen);
+		smsg.socketid = socketid;
+		smsg.msglen = slen;
+		atstate = AT_READ_MSG;
+		link_NBIOT = SEND_TO_NBIOT;
+	}
+	rt_kprintf("[AT_RECV_MSG] exit\r\n");
 }
+
 static void nbiot_atcmd_NSORF(rt_device_t newdev)
 {
-
+	/*
+		Read the messages
+		AT+NSORF=0,4 
+	*/
+	char* ATcmd;
+	int rx_size,iRet,infopos;
+	rt_uint8_t rx_buffer[atNbiotRxBufferSize];
+	rt_uint8_t tx_buffer[atNbiotTxBufferSize];
+	rt_memset(rx_buffer,0x00,atNbiotRxBufferSize);
+	rt_memset(tx_buffer,0x00,atNbiotTxBufferSize);
+	switch(link_NBIOT)
+	{
+		case SEND_TO_NBIOT:
+			rt_kprintf("[AT_READ_MSG] enter\r\n");
+			rt_sprintf(tx_buffer,"AT+NSORF=%d,%d\n",smsg.socketid,smsg.msglen);
+			DumpData("ATcmd",tx_buffer,strlen(tx_buffer));
+			rt_device_write(newdev,0,tx_buffer,strlen(tx_buffer));
+			link_NBIOT = RECV_FROM_NBIOT;
+			break;
+		case RECV_FROM_NBIOT:
+			rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
+			iRet = AtCheckRecvData(rx_buffer,rx_size);
+			if(iRet == AT_RESPNOSE_OK)
+			{
+				atstate = AT_RECV_MSG;
+				link_NBIOT = RECV_FROM_NBIOT;
+				/*
+					<socket>,<ip_addr>,<port>,<length>,<data>,<remaining_length>
+				*/
+				rt_kprintf("[AT_READ_MSG] OK\r\n");
+				rt_thread_delay(atCmdGapTime);
+				
+			}
+			else
+			{
+				rt_kprintf("[AT_READ_MSG](error)\r\n");
+			}
+			rt_kprintf("[AT_READ_MSG] exit\r\n");
+			break;
+		default:
+			rt_kprintf("[AT_READ_MSG] link_NBIOT err state\r\n");
+			break;
+	}
 }
 
 static void nbiot_atcmd_NSOCL(rt_device_t newdev)
 {
-
+	/*
+		Close the socket
+		AT+NSOCL=0 
+	*/
+	char* ATcmd;
+	int rx_size,iRet,infopos;
+	rt_uint8_t rx_buffer[atNbiotRxBufferSize];
+	rt_uint8_t tx_buffer[atNbiotTxBufferSize];
+	rt_memset(rx_buffer,0x00,atNbiotRxBufferSize);
+	rt_memset(tx_buffer,0x00,atNbiotTxBufferSize);
+	switch(link_NBIOT)
+	{
+		case SEND_TO_NBIOT:
+			rt_kprintf("[AT_CLOSE_SOCKET] enter\r\n");
+			rt_sprintf(tx_buffer,"AT+NSOCL=%d\n",socketID);
+			DumpData("ATcmd",tx_buffer,strlen(tx_buffer));
+			rt_device_write(newdev,0,tx_buffer,strlen(tx_buffer));
+			link_NBIOT = RECV_FROM_NBIOT;
+			break;
+		case RECV_FROM_NBIOT:
+			rx_size = AtUart3ReadTimeOut(newdev,rx_buffer,256,-1);
+			iRet = AtCheckRecvData(rx_buffer,rx_size);
+			if(iRet == AT_RESPNOSE_OK)
+			{
+				atstate = AT_IDLE;
+				link_NBIOT = RECV_FROM_NBIOT;
+				rt_kprintf("[AT_CLOSE_SOCKET] OK\r\n");
+				rt_thread_delay(atCmdGapTime);
+			}
+			else
+			{
+				rt_kprintf("[AT_CLOSE_SOCKET](error)\r\n");
+			}
+			rt_kprintf("[AT_CLOSE_SOCKET] exit\r\n");
+			break;
+		default:
+			rt_kprintf("[AT_CLOSE_SOCKET] link_NBIOT err state\r\n");
+			break;
+	}
 }
 
 void rt_init_thread_entry(void *parameter)
@@ -483,13 +713,17 @@ void rt_run_example2_thread_entry(void *parameter)
 				break;
 			case AT_RECV_MSG:
 				nbiot_atcmd_NSONMI(newdev);
+				break;
+			case AT_READ_MSG:
 				nbiot_atcmd_NSORF(newdev);
 				break;
 			case AT_CLOSE_SOCKET:
 				nbiot_atcmd_NSOCL(newdev);
 				break;
+			case AT_IDLE:
+				rt_thread_delay(100);
+				break;
 			default:
-				rt_kprintf(".");
 				rt_thread_delay(100);
 				break;
 		}
