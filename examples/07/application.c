@@ -61,7 +61,7 @@ enum AT_NBIOT_CoAP_STATE{
 	AT_QUERY_CDP_SERVER,
 	AT_ENABLE_SEND_INDICATE,
 	AT_ENABLE_NEW_INDICATE,
-	AT_SEND_MSG,
+	AT_SEND_CoAP_MSG,
 	AT_QUERY_RECV,
 	AT_GET_MSG,
 	AT_QUERY_RECV2
@@ -279,8 +279,8 @@ static int AtGetSocketId(const void * recvBuf,const int recvSize)
 	{
 		for(i=0;i<recvSize;i++)
 		{
-			ch = *(recvBuf+i);
-			if('0' <= ch && ch =< '9')
+			ch = *(rt_uint8_t*)(recvBuf+i);
+			if('0' <= ch && ch <= '9')
 			{
 				socketid = socketid*10 + (ch-'0');
 			}
@@ -522,7 +522,7 @@ static void nbiot_atcmd_NSONMI(rt_device_t newdev)
 		for(i=startpos;i<rx_size;i++)
 		{
 			ch= *(rx_buffer + i);
-			if('0' <= ch && ch =< '9')
+			if('0' <= ch && ch <= '9')
 			{
 				socketid = socketid*10+(ch -'0');
 			}
@@ -535,7 +535,7 @@ static void nbiot_atcmd_NSONMI(rt_device_t newdev)
 		for(i=startpos;i<rx_size;i++)
 		{
 			ch= *(rx_buffer + i);
-			if('0' <= ch && ch =< '9')
+			if('0' <= ch && ch <= '9')
 			{
 				slen = slen*10+(ch -'0');
 			}
